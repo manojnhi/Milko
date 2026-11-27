@@ -81,7 +81,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     session.defaultSession.setPermissionRequestHandler((_wc, _permission, done) => done(false));
     win = new BrowserWindow({
-      width: 1200, height: 800, minWidth: 380, minHeight: 600, title: 'Milko', autoHideMenuBar: true,
+      width: 1200, height: 800, minWidth: 380, minHeight: 600, title: 'Milko', autoHideMenuBar: true, icon: path.join(__dirname, 'build', 'icon.png'),
       webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
     win.webContents.setWindowOpenHandler(({ url }) => {

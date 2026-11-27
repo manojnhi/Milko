@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Text } from 'react-native';
+import { Image, Text } from 'react-native';
 import { changeCredentials, countUsers, createFirstUser, login } from '../core/repo.js';
 import { randomBytes } from '../platform/random';
 import { errorText, useApp, useLoad } from '../app-context';
@@ -46,7 +46,8 @@ export default function Login() {
   return (
     <Screen>
       <Card style={{ width: '100%', maxWidth: 420, alignSelf: 'center', marginTop: 32 }}>
-        <Text style={{ fontSize: 32, fontWeight: '800', color: colors.primary, textAlign: 'center' }}>🥛 Milko</Text>
+        <Image source={require('../../assets/logo.png')} accessibilityLabel="Milko" style={{ width: 112, height: 112, alignSelf: 'center' }} />
+        <Text style={{ fontSize: 30, fontWeight: '800', color: colors.primary, textAlign: 'center' }}>Milko</Text>
         <Text style={[s.muted, { textAlign: 'center', marginBottom: 20 }]}>{settings.businessName}</Text>
         {mode === 'create' && <Banner text={L('Create the owner login. There is no password recovery, so keep it safe.', 'मालिक का लॉगिन बनाएँ। पासवर्ड रिकवरी नहीं है, इसे सुरक्षित रखें।')} />}
         {mode === 'change' && <Banner text={L('The default password is not safe. Set a new one to continue.', 'डिफ़ॉल्ट पासवर्ड सुरक्षित नहीं। आगे बढ़ने के लिए नया पासवर्ड रखें।')} />}

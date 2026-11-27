@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, BackHandler, KeyboardAvoidingView, Platform, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { AppState, BackHandler, Image, KeyboardAvoidingView, Platform, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { getDb } from './src/db';
@@ -148,12 +148,16 @@ function Root() {
       <View style={{ flex: 1, flexDirection: wide ? 'row' : 'column' }}>
         {wide && (
           <View style={{ width: 220, backgroundColor: colors.side, padding: 12, gap: 4 }}>
-            <Text numberOfLines={2} style={{ color: '#fff', fontSize: 19, fontWeight: '800', padding: 8, marginBottom: 8 }}>🥛 {settings.businessName}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 4, marginBottom: 12 }}>
+              <Image source={require('./assets/logo.png')} accessibilityLabel="Milko" style={{ width: 44, height: 44 }} />
+              <Text numberOfLines={2} style={{ color: '#fff', fontSize: 17, fontWeight: '800', flex: 1 }}>{settings.businessName}</Text>
+            </View>
             {Object.keys(SCREENS).filter((k) => k !== 'menu').map(nav)}
           </View>
         )}
         <View style={{ flex: 1, minHeight: 0 }}>
           <View style={[s.row, { backgroundColor: '#fff', paddingHorizontal: 14, minHeight: 56, borderBottomWidth: 1, borderColor: colors.border }]}>
+            {!wide && <Image source={require('./assets/logo.png')} accessibilityLabel="Milko" style={{ width: 36, height: 36 }} />}
             <View style={{ flex: 1 }}>
               <Text accessibilityRole="header" style={{ fontSize: 18, fontWeight: '800', color: colors.text }}>{L(en, hi)}</Text>
               {!wide && <Text numberOfLines={1} style={s.muted}>{settings.businessName}</Text>}
