@@ -2,12 +2,12 @@ name: Build Android APK
 
 on:
   workflow_dispatch:        # GitHub > Actions > "Run workflow" se manually chalao
-  push:
-    branches: [main]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -15,12 +15,12 @@ jobs:
         with:
           node-version: 20
 
-      - uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
       - run: npm install
+      - run: npx expo install --fix
+      - run: npm install -g eas-cli
 
-      # Expo cloud pe APK banta hai; link expo.dev > Builds me milega
+      # Expo project link (pehli baar projectId app.json me likh deta hai)
+      - run: eas init --non-interactive --force
+
+      # APK Expo cloud pe banta hai; link expo.dev > Builds me milega
       - run: eas build --platform android --profile preview --non-interactive
