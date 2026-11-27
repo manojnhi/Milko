@@ -73,3 +73,29 @@ npm start             # sirf test run
 ```
 Note: ye pipeline maine yahan run nahi ki; web par `expo-sqlite` abhi alpha hai, to pehli build me
 tweak lag sakta hai. Error aaye to wo bhej dena.
+
+## 6. Mobile ↔ Desktop sync (dono taraf update)
+
+App offline-first hai (local SQLite) aur **Supabase** (free cloud DB) ke through sync hota hai.
+Mobile par entry karo to 15 sec ke andar desktop me aa jati hai, aur desktop se karo to mobile me.
+Offline kaam karo, net aate hi apne-aap sync ho jata hai. Header me sync status dikhta hai (tap = abhi sync).
+
+**Setup (ek baar):**
+1. https://supabase.com par free project banao.
+2. SQL Editor me `supabase.sql` ka poora content paste karke Run karo.
+3. Project Settings > API se **Project URL** aur **anon public key** copy karo.
+4. `src/config.js` me dono daalo.
+5. **Uske baad** APK aur EXE dono build karo (dono me same config hona chahiye).
+
+Notes:
+- Conflict hone par last edit jeetta hai. Delete bhi sync hota hai.
+- Login users (admin/admin) sync nahi hote, har device par local hain.
+- anon key app me hoti hai, to URL+key jisko mile wo data dekh sakta hai. Personal/chhote use ke liye theek hai;
+  zyada security chahiye to Supabase Auth add karna hoga.
+
+## 7. GitHub Actions troubleshooting
+
+- **APK workflow:** `EXPO_TOKEN` secret zaroori hai. Pehli baar Android keystore bhi banana padta hai, aur
+  `--non-interactive` mode me wo nahi ban sakta. Isliye **ek baar apne PC par** ye chalao aur keystore generate hone do:
+  `eas build -p android --profile preview` (sawal aaye to "Generate new keystore" = Yes). Uske baad GitHub workflow chalega.
+- **EXE workflow:** `babel.config.js` hata diya hai (Expo apna default use karta hai).
