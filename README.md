@@ -53,3 +53,23 @@ Formula `src/db.js` ke `calcRate` me badal sakte ho.
 - `.eas/workflows/build-apk.yml` – Expo ka apna EAS Workflow (GitHub repo expo.dev project se link ho to).
 
 Dono se pehle ek baar local me `eas init` / `eas build:configure` chalana zaroori hai.
+
+## 5. Windows EXE (desktop)
+
+Expo app ko web export karke Electron me wrap kiya hai (`desktop/` folder).
+
+**GitHub se (easy):** repo push karo > Actions > "Build Windows EXE" > Run workflow >
+build ke baad **Artifacts > Milko-Windows** se `Milko Setup.exe` (installer) aur portable exe download karo.
+
+**Apne Windows PC par:**
+```bash
+npm install
+npx expo install --fix
+npx expo export -p web
+cd desktop
+npm install
+npm run dist          # desktop/release/ me .exe milega
+npm start             # sirf test run
+```
+Note: ye pipeline maine yahan run nahi ki; web par `expo-sqlite` abhi alpha hai, to pehli build me
+tweak lag sakta hai. Error aaye to wo bhej dena.
