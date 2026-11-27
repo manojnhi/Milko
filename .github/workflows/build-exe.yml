@@ -1,0 +1,29 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+      - run: npx expo install --fix
+      - run: npx expo export -p web        # dist/ folder banta hai
+
+      - run: npm install
+        working-directory: desktop
+      - run: npx electron-builder --win --x64
+        working-directory: desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Milko-Windows
+          path: desktop/release/*.exe
