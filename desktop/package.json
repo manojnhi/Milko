@@ -1,6 +1,6 @@
 {
   "name": "milko-desktop",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Milko desktop (Windows exe)",
   "main": "main.js",
   "author": "Milko",
@@ -16,7 +16,7 @@
     "appId": "com.milko.desktop",
     "productName": "Milko",
     "directories": { "output": "release" },
-    "files": ["main.js"],
+    "files": ["main.js", "preload.js"],
     "extraResources": [{ "from": "../dist", "to": "web" }],
     "win": { "target": ["nsis", "portable"] },
     "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }

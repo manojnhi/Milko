@@ -1,101 +1,123 @@
-# Milko – Dairy milk collection app (Expo / React Native)
+# Milko – Dairy milk collection & accounting (Expo / React Native)
 
-Offline app (SQLite). Login, Milkmen, Rates, Milk Purchase entry, Account Report.
-Default login: `admin` / `admin`.
+Offline-first app (local SQLite). Android, web aur Windows desktop (Electron).
+Dashboard, Milkmen (photo), Collection, Rates, Payments, Reports (PDF/Print/CSV/Excel), Import wizard, Settings, Backup/Restore.
 
-## 1. Expo setup (PC par, ek baar)
+## 0. Update karne se PEHLE (purana data hai to)
 
-1. Node.js LTS install karo (https://nodejs.org).
-2. Project folder me terminal kholo:
-   ```bash
-   npm install
-   npx expo install --fix     # versions Expo SDK ke hisaab se align kar deta hai
-   npx expo start
-   ```
-3. Phone me **Expo Go** app install karo, QR scan karo (phone aur PC same WiFi par).
+- **Android:** purana app **uninstall mat karo**. Naya APK upar se install karo (same package `com.milko.app` aur same
+  signing key / same EAS account zaroori). Uninstall = data delete.
+- Pehli baar kholne par database apne-aap v2 me upgrade hota hai. Upgrade ke turant baad **Settings > Create backup file**.
+- Purane (1.0) app par wapas **downgrade mat karo**: passwords ab hash hote hain aur delete soft-delete hai.
+- **Windows desktop:** purane EXE me har launch par naya port tha, isliye har baar khaali database khulta tha.
+  Purane sessions ka data naye app me apne-aap nahi aayega. Purana `%APPDATA%` folder delete na karo.
+  Naye version me port fixed (47831) hai.
 
-## 2. APK banana (EAS cloud build, Android Studio ki zaroorat nahi)
+### Migration kya badalta hai
+Sirf naye columns/tables jodta hai; koi purana row delete/rename nahi. Do data changes:
+1. Passwords hash hote hain (password wahi rehta hai; `admin` ho to badalna padta hai).
+2. Purani entries ka `milk_type` milkman ke **maujooda** type se bhara jata hai (pehle store nahi hota tha).
 
-1. Free account: https://expo.dev/signup
-2. Terminal me:
-   ```bash
-   npm install -g eas-cli
-   eas login
-   eas build:configure        # pehli baar, agar puche to Android select karo
-   eas build -p android --profile preview
-   ```
-3. Build 10-20 min me complete hota hai. End me **APK download link** milta hai
-   (expo.dev dashboard → Builds me bhi). APK phone me install karo
-   ("Install unknown apps" allow karna padega).
+Purani dikkatein jo apne-aap theek **nahi** ki jati:
+- `today()` pehle UTC date deta tha, isliye subah 5:30 se pehle ki entries pichhli date par ho sakti hain. Jaanch lein.
+- Payments pehle record nahi hote the, isliye saari purani khareed "bakaya" dikhegi. Jo chuka diya hai, uske liye
+  Payments me **Adjustment** (negative amount + note) ya asli payments daalein.
 
-`eas.json` ka `preview` profile APK banata hai. `production` profile Play Store ke liye
-AAB banata hai.
+## 1. Setup aur run
 
-## 3. Local APK (optional, Android Studio + JDK 17 ho to)
+Node.js 22.13+ (tests ke liye; build ke liye Node 20 bhi chalta hai).
 
-```bash
-npx expo prebuild -p android
-cd android && ./gradlew assembleRelease
-# APK: android/app/build/outputs/apk/release/app-release.apk
-```
-
-## Rate formula
-
-`Rate/Ltr = Fat% × FatRate + SNF% × SnfRate`, `Amount = Qty × Rate`.
-Rate screen me jo date <= entry date ho, uska latest rate use hota hai (milk type ke hisaab se).
-Formula `src/db.js` ke `calcRate` me badal sakte ho.
-
-## 4. YML workflows (auto APK build)
-
-- `.github/workflows/build-apk.yml` – GitHub Actions. Project GitHub par push karo, repo
-  Settings > Secrets > Actions me `EXPO_TOKEN` add karo (expo.dev > Account > Access tokens),
-  phir Actions tab > "Build Android APK" > Run workflow.
-- `.eas/workflows/build-apk.yml` – Expo ka apna EAS Workflow (GitHub repo expo.dev project se link ho to).
-
-Dono se pehle ek baar local me `eas init` / `eas build:configure` chalana zaroori hai.
-
-## 5. Windows EXE (desktop)
-
-Expo app ko web export karke Electron me wrap kiya hai (`desktop/` folder).
-
-**GitHub se (easy):** repo push karo > Actions > "Build Windows EXE" > Run workflow >
-build ke baad **Artifacts > Milko-Windows** se `Milko Setup.exe` (installer) aur portable exe download karo.
-
-**Apne Windows PC par:**
 ```bash
 npm install
-npx expo install --fix
+npx expo install --fix    # versions ko Expo SDK 54 se align karta hai
+npx expo-doctor           # config/dependency check
+npm test                  # core logic + migration tests
+npx expo start            # phone: Expo Go se QR scan
+npx expo start --web      # browser
+```
+
+Pehli baar (naya install) app owner username/password banane ko kehta hai. Koi default login nahi.
+Password bhool gaye to recovery nahi hai.
+
+## 2. Android APK
+
+```bash
+npm install -g eas-cli
+eas login
+eas build -p android --profile preview      # APK
+eas build -p android --profile production   # Play Store AAB
+```
+Local build (Android Studio + JDK 17): `npx expo prebuild -p android && cd android && ./gradlew assembleRelease`
+
+GitHub Actions: `.github/workflows/build-apk.yml` (secret `EXPO_TOKEN`). Pehli keystore ek baar local `eas build` se banayein.
+
+## 3. Web
+
+```bash
+npx expo export -p web     # dist/
+```
+Hosting par ye headers zaroori hain (SQLite wasm ke liye), aur HTTPS (ya localhost):
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+Data usi browser aur usi address me rehta hai. Browser data clear karne se data chala jata hai: regular backup lein.
+Ek hi tab me kholein.
+
+## 4. Windows desktop
+
+```bash
+npm install
 npx expo export -p web
 cd desktop
 npm install
-npm run dist          # desktop/release/ me .exe milega
-npm start             # sirf test run
+npm start          # test run
+npm run dist       # desktop/release/ me installer + portable exe (Windows par)
 ```
-Note: ye pipeline maine yahan run nahi ki; web par `expo-sqlite` abhi alpha hai, to pehli build me
-tweak lag sakta hai. Error aaye to wo bhej dena.
+Ya GitHub Actions: "Build Windows EXE".
 
-## 6. Mobile ↔ Desktop sync (dono taraf update)
+## 5. Platform behaviour
 
-App offline-first hai (local SQLite) aur **Supabase** (free cloud DB) ke through sync hota hai.
-Mobile par entry karo to 15 sec ke andar desktop me aa jati hai, aur desktop se karo to mobile me.
-Offline kaam karo, net aate hi apne-aap sync ho jata hai. Header me sync status dikhta hai (tap = abhi sync).
+| Kaam | Android | Browser | Desktop |
+|---|---|---|---|
+| PDF | file banti hai, share sheet se save/bhejein | print dialog > "Save as PDF" | Save dialog se seedha PDF |
+| Print | system print | browser print | system print dialog |
+| CSV / Excel / backup | share sheet (Files, Drive, WhatsApp) | download | download/save |
+| Photo | camera ya gallery | file chooser | file chooser (camera nahi) |
 
-**Setup (ek baar):**
-1. https://supabase.com par free project banao.
-2. SQL Editor me `supabase.sql` ka poora content paste karke Run karo.
-3. Project Settings > API se **Project URL** aur **anon public key** copy karo.
-4. `src/config.js` me dono daalo.
-5. **Uske baad** APK aur EXE dono build karo (dono me same config hona chahiye).
+## 6. Rate formula
 
-Notes:
-- Conflict hone par last edit jeetta hai. Delete bhi sync hota hai.
-- Login users (admin/admin) sync nahi hote, har device par local hain.
-- anon key app me hoti hai, to URL+key jisko mile wo data dekh sakta hai. Personal/chhote use ke liye theek hai;
-  zyada security chahiye to Supabase Auth add karna hoga.
+Rate screen se har rate ke liye chunein:
+- `Fat + SNF`: Fat% × FatRate + SNF% × SnfRate (purana formula, default)
+- `Fat only`: Fat% × FatRate
+- `Fixed`: tay ₹/unit
 
-## 7. GitHub Actions troubleshooting
+Entry date ke din ya usse pehle ka latest rate lagta hai. Milkman ka "Fixed rate" bhara ho to wahi lagta hai.
+Amount = Quantity × Rate (2 decimal). Edit me agar date, milkman, type, fat, SNF nahi badle to purana rate rehta hai.
 
-- **APK workflow:** `EXPO_TOKEN` secret zaroori hai. Pehli baar Android keystore bhi banana padta hai, aur
-  `--non-interactive` mode me wo nahi ban sakta. Isliye **ek baar apne PC par** ye chalao aur keystore generate hone do:
-  `eas build -p android --profile preview` (sawal aaye to "Generate new keystore" = Yes). Uske baad GitHub workflow chalega.
-- **EXE workflow:** `babel.config.js` hata diya hai (Expo apna default use karta hai).
+## 7. Accounting
+
+Balance = Opening + Purchase − Payment − Advance + Adjustment. Positive = dairy ko dena hai.
+Entry delete aur payment cancel soft-delete hain (reason ke saath, Settings > Audit log).
+
+## 8. Import
+
+Types: milkmen, rates, purchases. `.csv` (UTF-8) aur `.xlsx`; `.xls` nahi. Max 10 MB / 20,000 rows.
+Templates aur expected columns Import screen par hain. Order: milkmen → rates → purchases.
+Import ek transaction hai: beech me error aaya to kuch bhi save nahi hota.
+
+## 9. Security aur limitations
+
+- Login sirf app lock hai (PBKDF2 hash). Database file aur backup **encrypted nahi** hain.
+- Multi-user roles nahi hain.
+- **Cloud sync nahi hai.** Purane README me Supabase sync likha tha, par code project me nahi tha
+  (`supabase.sql`, `src/config.js` gayab). Devices ke beech data backup/restore se le jaayein (merge nahi, replace hota hai).
+- Milk unit (L / Kg) pehli entry ke baad lock ho jata hai; quantity convert nahi hoti.
+- Language: English ya हिन्दी (milk type names, CSV headers aur kuch system errors English me).
+
+## Code layout
+
+- `src/core/` – pure logic (migrations, accounting, import, reports, backup, xlsx/csv). Tests: `tests/`.
+- `src/platform/` – file/print/photo (`files.js` Android, `files.web.js` web+desktop).
+- `src/screens/`, `src/ui.js`, `App.js` – UI.
+- Naya schema change: `src/core/migrations.js` me naya step jodein aur `SCHEMA_VERSION` badhayein; purane steps na badlein.
