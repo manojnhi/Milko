@@ -12,8 +12,10 @@ import { openXlsx, writeXlsx } from '../src/core/xlsx.js';
 import * as imp from '../src/core/importer.js';
 import { buildReport, reportMatrix } from '../src/core/reports.js';
 import { createBackup, parseBackup, restoreBackup, getSnapshot } from '../src/core/backup.js';
+import { linkedRate, toMagha, toLitre } from '../src/core/units.js';
+import { titleCase, properName } from '../src/core/text.js';
 import { parseDate, today } from '../src/core/dates.js';
-import { round2, fmtMoney, sumMoney } from '../src/core/money.js';
+import { round2, fmtMoney, sumMoney, roundAmount } from '../src/core/money.js';
 
 const JSZip = createRequire(import.meta.url)(process.env.JSZIP_PATH || 'jszip');
 const rand = (n) => new Uint8Array(randomBytes(n));
@@ -239,4 +241,66 @@ test('backup/restore is atomic and keeps a snapshot', async () => {
   assert.equal((await getSnapshot(db)).tables.Purchase.length, 2);
   assert.ok(await repo.login(db, 'owner', 'longpassword'));
   assert.throws(() => parseBackup('{}'), /not a Milko/);
+});
+
+test('per-milkman price follows fat/SNF; matches old database values', () => {
+  const old = { price: 65, std_fat: 6.5, std_snf: 9, fat_share: 52, above_std: 0 };
+  for (const [f, s, rate] of [[6.0, 8.8, 61.71], [5.8, 8.4, 59.28], [7.0, 8.8, 64.31], [5.9, 9.1, 61.88], [6.5, 9, 65]]) assert.equal(linkedRate(old, f, s), rate);
+  const both = { ...old, price: 70, above_std: 1 };
+  assert.equal(linkedRate(both, 6.5, 9), 70);
+  assert.ok(linkedRate(both, 7, 9) > 70 && linkedRate(both, 6, 9) < 70);
+  assert.equal(toMagha(40.03), 34.04);
+  assert.equal(toMagha(22.32), 18.98);
+  assert.equal(toLitre(34), 39.98);
+  assert.equal(titleCase('save entry'), 'Save Entry');
+  assert.equal(titleCase('No entries yet. Add rates.'), 'No entries yet. Add rates.');
+  assert.equal(properName('m/s MANGAL dairy'), 'm/s Mangal Dairy');
+});
+
+test('own price with dates, Magha billing, Litre and Magha reports', async () => {
+  const db = await freshDb();
+  const price = { applicable_date: '2026-01-01', price: '65', std_fat: '6.5', std_snf: '9', fat_share: '52', above_std: 1 };
+  const man = { milkman_code: 2, milkman_name: 'shivpal singh', milk_type: 'Buffalo', rate_mode: 'own', pay_unit: 'Magha' };
+  await assert.rejects(repo.saveMilkman(db, man, { isNew: true }), /milk price/);
+  assert.equal(await repo.getMilkman(db, 2), null, 'failed save leaves nothing');
+  await repo.saveMilkman(db, man, { isNew: true, price });
+  await repo.saveMilkman(db, man, { price });
+  assert.equal((await repo.listPrices(db, 2)).length, 1);
+  assert.equal((await repo.getMilkman(db, 2)).milkman_name, 'Shivpal Singh');
+  const e = { date: '2026-03-01', shift: 'Morning', milkman_code: 2, qty: '40.03', fat: '6.5', snf: '9' };
+  const id = await repo.savePurchase(db, e);
+  let p = await repo.getPurchase(db, id);
+  assert.deepEqual([p.qty, p.magha_qty, p.pay_unit, p.rate, p.amount], [40.03, 34.04, 'Magha', 65, 2212.6]);
+  const id2 = await repo.savePurchase(db, { ...e, shift: 'Evening', qty: '34', qty_unit: 'Magha' });
+  p = await repo.getPurchase(db, id2);
+  assert.deepEqual([p.qty, p.magha_qty, p.amount], [39.98, 34, 2210]);
+  await repo.savePurchase(db, { ...e, shift: 'Evening', qty: '39.98' }, { id: id2, reason: 'no change' });
+  assert.equal((await repo.getPurchase(db, id2)).amount, 2210, 'editing in litres keeps Magha value');
+  await repo.saveMilkman(db, man, { price: { ...price, applicable_date: '2026-04-01', price: '70' } });
+  assert.equal((await repo.previewPurchase(db, e)).row.rate, 65);
+  assert.equal((await repo.previewPurchase(db, { ...e, date: '2026-04-02' })).row.rate, 70);
+  for (const [display, keys] of [['L', ['qty']], ['Magha', ['magha']], ['both', ['qty', 'magha']]]) {
+    for (const type of ['daily', 'account', 'rate', 'entries']) {
+      const r = await buildReport(db, type, { milkman: 2 }, undefined, undefined, { display });
+      assert.deepEqual(r.columns.map((c) => c.key).filter((k) => k === 'qty' || k === 'magha'), keys, type + display);
+    }
+  }
+  const t = await repo.totalPurchases(db, { milkman: 2 });
+  assert.equal(Math.round(t.magha * 100) / 100, 68.04);
+  const backup = parseBackup(JSON.stringify(await createBackup(db)));
+  await restoreBackup(db, backup, 'u');
+  assert.equal((await repo.listPrices(db, 2)).length, 2);
+});
+
+test('rounding option: paise or rupees, saved entries unchanged', async () => {
+  assert.deepEqual([roundAmount(2287.49, 'rupee'), roundAmount(2287.5, 'rupee'), roundAmount(-2.5, 'rupee'), roundAmount(2287.494, 'paise')], [2287, 2288, -3, 2287.49]);
+  const db = await freshDb();
+  const first = await repo.savePurchase(db, entry); // 443.10
+  await repo.saveSettings(db, { rounding: 'rupee' });
+  assert.equal((await repo.getPurchase(db, first)).amount, 443.1);
+  const id = await repo.savePurchase(db, { ...entry, shift: 'Evening', qty: '10.75' }); // 453.65
+  assert.equal((await repo.getPurchase(db, id)).amount, 454);
+  await repo.savePurchase(db, { ...entry, remark: 'only remark' }, { id: first, reason: 'note' });
+  assert.equal((await repo.getPurchase(db, first)).amount, 443.1);
+  await assert.rejects(repo.saveSettings(db, { rounding: 'x' }), /paise or rupees/);
 });

@@ -4,7 +4,7 @@ import { audit } from './repo.js';
 import { nowStamp } from './dates.js';
 
 // Login users jaan-bujhkar backup me nahi: restore se password nahi badalta.
-const TABLES = ['Milk_type', 'Milkman_tbl', 'Rate_tbl', 'Purchase', 'Payment', 'Photo', 'Setting', 'Audit_log'];
+const TABLES = ['Milk_type', 'Milkman_tbl', 'Rate_tbl', 'Milkman_rate', 'Purchase', 'Payment', 'Photo', 'Setting', 'Audit_log'];
 const REQUIRED = ['Milkman_tbl', 'Rate_tbl', 'Purchase'];
 const CHUNK = 300000;
 

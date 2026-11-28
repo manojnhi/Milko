@@ -1,17 +1,16 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import { dashboard } from '../core/repo.js';
 import { today } from '../core/dates.js';
 import { errorText, useApp, useLoad } from '../app-context';
-import { Banner, Button, Card, Empty, Loading, Screen, Stat, s } from '../ui';
+import { Banner, Button, Card, colors, Empty, Loading, Screen, Stat, s, Text } from '../ui';
 
 export default function Dashboard() {
-  const { db, go, L, money, num, date, settings } = useApp();
+  const { db, go, L, money, date, qtyText, qtyOf } = useApp();
   const { data, loading, error, reload } = useLoad(() => dashboard(db, today()), []);
 
   if (loading) return <Loading />;
   if (error) return <Screen><Banner kind="error" text={errorText(error, L)}><Button title={L('Retry', 'दोबारा')} onPress={reload} /></Banner></Screen>;
-  const unit = settings.unit;
 
   return (
     <Screen>
@@ -20,15 +19,15 @@ export default function Dashboard() {
       )}
       <Text style={s.h1}>{L("Today's collection", 'आज का संग्रह')} · {date(today())}</Text>
       <View style={[s.wrap, { alignItems: 'stretch' }]}>
-        <Stat label={L('Total quantity', 'कुल दूध')} value={`${num(data.today.qty)} ${unit}`} icon="water" />
+        <Stat label={L('Total quantity', 'कुल दूध')} value={qtyText(data.today.qty, data.today.magha)} icon="water" />
         <Stat label={L('Total amount', 'कुल राशि')} value={money(data.today.amount)} icon="cash" />
         <Stat label={L('Entries', 'एंट्री')} value={String(data.today.n)} icon="receipt" />
         <Stat label={L('Active milkmen', 'सक्रिय दूधवाले')} value={String(data.active)} icon="people" onPress={() => go('milkmen')} />
-        <Stat label={`${L('Pending payments', 'बकाया भुगतान')} (${data.pendingCount})`} value={money(data.pending)} icon="alert-circle" tone="#b45309" onPress={() => go('payments')} />
+        <Stat label={`${L('Pending payments', 'बकाया भुगतान')} (${data.pendingCount})`} value={money(data.pending)} icon="alert-circle" tone={colors.accent} onPress={() => go('payments')} />
       </View>
       <Card>
-        <Text style={s.muted}>{L('Morning', 'सुबह')}: {num(data.morning.qty)} {unit} · {money(data.morning.amount)}</Text>
-        <Text style={s.muted}>{L('Evening', 'शाम')}: {num(data.evening.qty)} {unit} · {money(data.evening.amount)}</Text>
+        <Text style={s.muted}>{L('Morning', 'सुबह')}: {qtyText(data.morning.qty, data.morning.magha)} · {money(data.morning.amount)}</Text>
+        <Text style={s.muted}>{L('Evening', 'शाम')}: {qtyText(data.evening.qty, data.evening.magha)} · {money(data.evening.amount)}</Text>
       </Card>
       <View style={s.wrap}>
         <Button icon="add" title={L('New milk entry', 'नई दूध एंट्री')} onPress={() => go('purchase')} />
@@ -43,7 +42,7 @@ export default function Dashboard() {
           <View key={r.id} style={[s.row, s.option]}>
             <View style={{ flex: 1 }}>
               <Text style={s.bold}>{r.milkman_code} · {r.milkman_name || '?'}</Text>
-              <Text style={s.muted}>{date(r.date)} · {r.shift === 'Morning' ? L('Morning', 'सुबह') : L('Evening', 'शाम')} · {num(r.qty)} {unit}</Text>
+              <Text style={s.muted}>{date(r.date)} · {r.shift === 'Morning' ? L('Morning', 'सुबह') : L('Evening', 'शाम')} · {qtyOf(r)}</Text>
             </View>
             <Text style={s.bold}>{money(r.amount)}</Text>
           </View>

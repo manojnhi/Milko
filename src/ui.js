@@ -1,24 +1,36 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text as RNText, TextInput as RNTextInput, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { addDays, formatDate, parseDate, today } from './core/dates.js';
+import { AUTO, THEMES, themeOf } from './core/themes.js';
+import { LANGUAGES, languageLabel, languageOf } from './core/i18n.js';
 import { useApp } from './app-context';
 
-export const colors = {
-  primary: '#0f6b4f', primarySoft: '#e4f0ea', accent: '#b45309', bg: '#f3f6f4', card: '#ffffff',
-  text: '#17211c', muted: '#55635b', danger: '#b3261e', dangerSoft: '#fdecea', ok: '#1b6e36', okSoft: '#e5f4e9',
-  warnSoft: '#fff4dc', border: '#d5ded9', side: '#0b3b2d',
+/** Mutable: applyTheme() isi object ko badalta hai, isliye screens ko kuch badalna nahi padta. */
+export const colors = { ...themeOf('light').c };
+
+// Android custom font par fontWeight kaam nahi karta, isliye weight ke hisab se family chunte hain.
+export const FONTS = {
+  'Poppins-Regular': require('../assets/fonts/Poppins-Regular.ttf'),
+  'Poppins-Medium': require('../assets/fonts/Poppins-Medium.ttf'),
 };
+// Halka bold: 700/800 bhi Medium se dikhte hain (Poppins-Bold bahut mota tha). Baaki sab Regular.
+const fontStyle = (style) => {
+  const w = Number(StyleSheet.flatten(style)?.fontWeight) || 400;
+  return [{ color: colors.text }, style, { fontFamily: w >= 600 ? 'Poppins-Medium' : 'Poppins-Regular', fontWeight: 'normal' }];
+};
+export const Text = ({ style, ...props }) => <RNText {...props} style={fontStyle(style)} />;
+export const TextInput = ({ style, ...props }) => <RNTextInput keyboardAppearance={colors.dark ? 'dark' : 'light'} {...props} style={fontStyle(style)} />;
 
 export const Icon = ({ name, size = 18, color = colors.text }) => <Ionicons name={name} size={size} color={color} />;
 
 export function Button({ title, onPress, kind = 'primary', icon, style, small, disabled, busy }) {
-  const bg = { primary: colors.primary, danger: colors.danger, ghost: colors.primarySoft }[kind];
-  const fg = kind === 'ghost' ? colors.primary : '#fff';
+  const bg = { primary: colors.button, danger: colors.dangerSoft, ghost: colors.card }[kind];
+  const fg = { primary: colors.buttonText, danger: colors.danger, ghost: colors.primary }[kind];
   return (
     <TouchableOpacity
       accessibilityRole="button" accessibilityLabel={title} disabled={disabled || busy} onPress={onPress}
-      style={[s.btn, small && s.btnSmall, { backgroundColor: bg, opacity: disabled || busy ? 0.5 : 1 }, style]}
+      style={[s.btn, small && s.btnSmall, kind === 'ghost' && { borderWidth: 1, borderColor: colors.border }, { backgroundColor: bg, opacity: disabled || busy ? 0.5 : 1 }, style]}
     >
       {busy ? <ActivityIndicator size="small" color={fg} /> : icon ? <Icon name={icon} size={small ? 15 : 18} color={fg} /> : null}
       <Text style={[s.btnText, small && { fontSize: 13 }, { color: fg }]}>{title}</Text>
@@ -31,7 +43,7 @@ export function Field({ label, error, hint, style, ...props }) {
     <View style={[s.field, style]}>
       <Text style={s.label}>{label}</Text>
       <TextInput
-        accessibilityLabel={label} placeholderTextColor="#7d8a83"
+        accessibilityLabel={label} placeholderTextColor={colors.muted}
         style={[s.input, error && { borderColor: colors.danger }, props.multiline && { minHeight: 64, textAlignVertical: 'top' }, props.editable === false && { backgroundColor: colors.bg }]}
         {...props}
       />
@@ -56,7 +68,7 @@ export function DateField({ label, value, onChange, error, optional, style }) {
       <View style={{ flexDirection: 'row', gap: 4 }}>
         <TouchableOpacity accessibilityLabel={L('Previous day', 'पिछला दिन')} style={s.stepper} onPress={() => step(-1)}><Icon name="chevron-back" /></TouchableOpacity>
         <TextInput accessibilityLabel={label} style={[s.input, { flex: 1, minWidth: 0 }, error && { borderColor: colors.danger }]} value={text}
-          onChangeText={change} placeholder={optional ? L('All', 'सभी') : fmt} placeholderTextColor="#7d8a83" />
+          onChangeText={change} placeholder={optional ? L('All', 'सभी') : fmt} placeholderTextColor={colors.muted} />
         <TouchableOpacity accessibilityLabel={L('Next day', 'अगला दिन')} style={s.stepper} onPress={() => step(1)}><Icon name="chevron-forward" /></TouchableOpacity>
       </View>
       {error ? <Text style={s.error}>{error}</Text> : null}
@@ -75,8 +87,8 @@ export function Chips({ label, options, value, onChange }) {
           const on = value === v;
           return (
             <TouchableOpacity key={String(v)} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => onChange(v)}
-              style={[s.chip, on && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
-              <Text style={{ color: on ? '#fff' : colors.text, fontWeight: on ? '700' : '400' }}>{text}</Text>
+              style={[s.chip, on && { backgroundColor: colors.button, borderColor: colors.chipBorder }]}>
+              <Text style={{ color: on ? colors.buttonText : colors.text, fontWeight: on ? '700' : '400' }}>{text}</Text>
             </TouchableOpacity>
           );
         })}
@@ -203,7 +215,7 @@ export function Table({ columns, rows, text, totals }) {
     <View key={key} style={[{ flexDirection: 'row', borderBottomWidth: 1, borderColor: colors.border }, extra]}>
       {columns.map((c, i) => (
         <Text key={c.key} style={[s.cell, { width: width(c), flexGrow: 1 }, ['num', 'money', 'int'].includes(c.type) && { textAlign: 'right' }, (isHead || key === 'total') && { fontWeight: '700' }]}>
-          {isHead ? c.label : key === 'total' ? (i === 0 ? 'TOTAL' : c.key in row ? text(row, c) : '') : text(row, c)}
+          {isHead ? c.label : key === 'total' ? (i === 0 ? 'Total' : c.key in row ? text(row, c) : '') : text(row, c)}
         </Text>
       ))}
     </View>
@@ -224,30 +236,104 @@ export function More({ total, shown, onPress }) {
   return total > shown ? <Button kind="ghost" title={`${L('Show more', 'और दिखाएँ')} (${total - shown})`} onPress={onPress} /> : null;
 }
 
-export const s = StyleSheet.create({
+const buildStyles = () => StyleSheet.create({
   screen: { padding: 14, paddingBottom: 32, width: '100%', maxWidth: 1120, alignSelf: 'center' },
   btn: { minHeight: 44, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginVertical: 4 },
   btnSmall: { minHeight: 40, paddingHorizontal: 12, paddingVertical: 6 },
   btnText: { fontWeight: '700', fontSize: 15 },
   field: { marginBottom: 12 },
   label: { color: colors.muted, fontSize: 13, marginBottom: 4, fontWeight: '600' },
-  input: { borderWidth: 1, borderColor: colors.border, backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 12, minHeight: 44, fontSize: 16, color: colors.text },
-  stepper: { width: 40, minHeight: 44, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
+  input: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.input, borderRadius: 8, paddingHorizontal: 12, minHeight: 44, fontSize: 16, color: colors.text },
+  stepper: { width: 40, minHeight: 44, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.input },
   error: { color: colors.danger, fontSize: 13, marginTop: 2 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
-  chip: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border },
+  chip: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 20, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
   card: { backgroundColor: colors.card, borderRadius: 14, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: colors.border },
   stat: { flexGrow: 1, flexBasis: 150 },
-  statValue: { fontSize: 22, fontWeight: '800', color: colors.text, marginTop: 6 },
+  statValue: { fontSize: 22, fontWeight: '700', color: colors.text, marginTop: 6 },
   banner: { borderRadius: 10, padding: 12, marginBottom: 12, gap: 6 },
-  backdrop: { flex: 1, backgroundColor: 'rgba(10,30,22,0.55)', justifyContent: 'center', alignItems: 'center', padding: 16 },
-  dialog: { backgroundColor: '#fff', borderRadius: 16, padding: 16, width: '100%', maxWidth: 480, maxHeight: '90%' },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  dialog: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16, width: '100%', maxWidth: 480, maxHeight: '90%' },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   option: { paddingVertical: 10, borderBottomWidth: 1, borderColor: colors.border, minHeight: 44, justifyContent: 'center' },
   cell: { padding: 6, fontSize: 13, color: colors.text },
-  h1: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 10 },
-  h2: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 8 },
+  h1: { fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 10 },
+  h2: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   muted: { color: colors.muted, fontSize: 13 },
   bold: { fontWeight: '700', color: colors.text },
 });
+export const s = buildStyles();
+
+/** Naya palette lagao: colors aur s dono usi object me badal jaate hain; phir App dobara render karta hai. */
+let applied = null;
+export function applyTheme(palette) {
+  if (applied === palette) return;
+  applied = palette;
+  Object.assign(colors, palette);
+  Object.assign(s, buildStyles());
+}
+
+/** Language chunne ki list: har row me native naam bada aur English naam chhota, dono dikhte hain. */
+export function LanguagePicker() {
+  const { settings, setPref } = useApp();
+  const [open, setOpen] = useState(false);
+  const cur = languageOf(settings.language);
+  return (
+    <View>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Language / भाषा" style={[s.input, s.row]} onPress={() => setOpen(true)}>
+        <Icon name="language-outline" size={20} color={colors.primary} />
+        <Text style={{ flex: 1 }}>{languageLabel(cur)}</Text>
+        <Icon name="chevron-down" />
+      </TouchableOpacity>
+      <Sheet visible={open} title="Language · भाषा" onClose={() => setOpen(false)}>
+        <ScrollView style={{ maxHeight: 440 }} keyboardShouldPersistTaps="handled">
+          {LANGUAGES.map((l) => {
+            const on = l.code === settings.language;
+            return (
+              <TouchableOpacity key={l.code} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={languageLabel(l)}
+                style={[s.option, s.row, on && { backgroundColor: colors.primarySoft }]} onPress={() => { setOpen(false); setPref({ language: l.code }); }}>
+                <View style={{ flex: 1, paddingHorizontal: 6 }}>
+                  <Text style={{ fontSize: 16 }}>{l.native}</Text>
+                  {l.code !== 'en' ? <Text style={s.muted}>{l.en}</Text> : null}
+                </View>
+                {on ? <Icon name="checkmark-circle" size={22} color={colors.primary} /> : null}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </Sheet>
+    </View>
+  );
+}
+
+/** Theme ke chhote preview tiles (bg + primary + card rang). 'Auto' aadha light aadha dark dikhata hai. */
+export function ThemePicker({ value, onChange }) {
+  const { L } = useApp();
+  const swatch = (t) => (t.id === 'auto'
+    ? [themeOf('light').c.bg, themeOf('dark').c.bg, themeOf('dark').c.primary]
+    : [t.c.bg, t.c.primary, t.c.card]);
+  return (
+    <View style={s.wrap}>
+      {[...THEMES, AUTO].map((t) => {
+        const on = value === t.id;
+        const [a, b, c] = swatch(t);
+        return (
+          <TouchableOpacity key={t.id} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={L(...t.name)} onPress={() => onChange(t.id)}
+            style={{ width: 96, padding: 6, borderRadius: 12, borderWidth: on ? 2 : 1, borderColor: on ? colors.primary : colors.border, backgroundColor: colors.card, gap: 6 }}>
+            <View style={{ flexDirection: 'row', height: 30, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
+              <View style={{ flex: 2, backgroundColor: a }} />
+              <View style={{ flex: 1, backgroundColor: b }} />
+              <View style={{ flex: 1, backgroundColor: c }} />
+            </View>
+            <View style={s.row}>
+              <Text numberOfLines={1} style={{ fontSize: 12, flex: 1, fontWeight: on ? '700' : '400' }}>{L(...t.name)}</Text>
+              {on ? <Icon name="checkmark-circle" size={14} color={colors.primary} /> : null}
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+

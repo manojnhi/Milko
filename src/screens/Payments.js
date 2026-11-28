@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { TouchableOpacity, View } from 'react-native';
 import * as repo from '../core/repo.js';
 import { isISODate, today } from '../core/dates.js';
 import { sumMoney } from '../core/money.js';
 import { errorText, useApp, useLoad } from '../app-context';
-import { Banner, Button, Card, Chips, Cols, DateField, Empty, Field, Loading, MilkmanPicker, More, Screen, s } from '../ui';
+import { Banner, Button, Card, Chips, Cols, DateField, Empty, Field, Loading, MilkmanPicker, More, Screen, s, Text } from '../ui';
 
 export default function Payments() {
   const { db, user, route, L, money, date, notify, confirm, changed, fail, go } = useApp();

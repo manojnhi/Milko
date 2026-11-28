@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import * as repo from '../core/repo.js';
 import { addDays, isISODate, today } from '../core/dates.js';
 import { errorText, useApp, useLoad } from '../app-context';
-import { Banner, Button, Card, Chips, Cols, DateField, Empty, Field, Loading, MilkmanPicker, More, Screen, s, colors } from '../ui';
+import { Banner, Button, Card, Chips, Cols, DateField, Empty, Field, Loading, MilkmanPicker, More, Screen, s, colors, Text } from '../ui';
 
 const blank = (date = today(), shift = new Date().getHours() < 14 ? 'Morning' : 'Evening') =>
-  ({ date, shift, milkman_code: '', milk_type: '', qty: '', fat: '', snf: '', remark: '' });
+  ({ date, shift, milkman_code: '', milk_type: '', qty: '', qty_unit: 'L', fat: '', snf: '', remark: '' });
 
 export default function Purchase() {
-  const { db, user, L, money, num, date, settings, notify, confirm, changed, fail, revision } = useApp();
+  const { db, user, L, money, date, settings, notify, confirm, changed, fail, revision, qtyText, qtyOf, litreName } = useApp();
   const [form, setForm] = useState(() => blank());
   const [code, setCode] = useState('');
   const [editId, setEditId] = useState(0);
@@ -41,12 +41,12 @@ export default function Purchase() {
     let live = true;
     if (!form.milkman_code || !form.qty || !form.fat || !form.snf) { setPreview({}); return undefined; }
     repo.previewPurchase(db, form, editId)
-      .then((p) => live && setPreview({ rate: p.row.rate, amount: p.row.amount, kept: p.keptRate }))
+      .then((p) => live && setPreview({ rate: p.row.rate, amount: p.row.amount, kept: p.keptRate, row: p.row }))
       .catch((e) => live && setPreview({ message: errorText(e, L) }));
     return () => { live = false; };
   }, [form, editId, revision]);
 
-  const reset = () => { setForm(blank(form.date, form.shift)); setCode(''); setEditId(0); setError(null); };
+  const reset = () => { setForm({ ...blank(form.date, form.shift), qty_unit: form.qty_unit }); setCode(''); setEditId(0); setError(null); };
 
   const save = async () => {
     setBusy(true);
@@ -78,12 +78,12 @@ export default function Purchase() {
     setEditId(r.id);
     setError(null);
     setCode(String(r.milkman_code));
-    setForm({ date: r.date, shift: r.shift, milkman_code: r.milkman_code, milk_type: r.milk_type || '', qty: String(r.qty), fat: String(r.fat), snf: String(r.snf), remark: r.remark || '' });
+    setForm({ date: r.date, shift: r.shift, milkman_code: r.milkman_code, milk_type: r.milk_type || '', qty: String(r.qty), qty_unit: 'L', fat: String(r.fat), snf: String(r.snf), remark: r.remark || '' });
     notify(L('Edit the entry in the form at the top', 'ऊपर के फ़ॉर्म में एंट्री बदलें'));
   };
 
   const remove = async (r) => {
-    const ok = await confirm({ title: L('Delete entry?', 'एंट्री डिलीट करें?'), message: `${r.milkman_name || r.milkman_code} · ${date(r.date)} · ${num(r.qty)} ${settings.unit} · ${money(r.amount)}`, needReason: true, danger: true, ok: L('Delete', 'डिलीट') });
+    const ok = await confirm({ title: L('Delete entry?', 'एंट्री डिलीट करें?'), message: `${r.milkman_name || r.milkman_code} · ${date(r.date)} · ${qtyOf(r)} · ${money(r.amount)}`, needReason: true, danger: true, ok: L('Delete', 'डिलीट') });
     if (!ok) return;
     try {
       await repo.deletePurchase(db, r.id, ok.reason, user.username);
@@ -114,15 +114,19 @@ export default function Purchase() {
           <MilkmanPicker label={L('Milkman', 'दूधवाला')} list={milkmen.filter((m) => m.active || m.milkman_code === Number(form.milkman_code))} value={form.milkman_code} onChange={choose} />
         </Cols>
         {selected && <Chips label={L('Milk type', 'दूध का प्रकार')} options={typeOptions} value={form.milk_type} onChange={set('milk_type')} />}
+        {settings.unit === 'L' && (
+          <Chips label={L('Quantity entered in', 'मात्रा किसमें लिख रहे हैं')} options={[['L', L('Litre', 'लीटर')], ['Magha', L('Magha', 'मघा')]]} value={form.qty_unit} onChange={set('qty_unit')} />
+        )}
         <Cols>
-          <Field label={`${L('Quantity', 'मात्रा')} (${settings.unit})`} value={form.qty} onChangeText={set('qty')} keyboardType="decimal-pad" error={err('qty')} />
+          <Field label={`${L('Quantity', 'मात्रा')} (${form.qty_unit === 'Magha' ? L('Magha', 'मघा') : litreName})`} value={form.qty} onChangeText={set('qty')} keyboardType="decimal-pad" error={err('qty')} />
           <Field label="Fat %" value={form.fat} onChangeText={set('fat')} keyboardType="decimal-pad" error={err('fat')} />
           <Field label="SNF %" value={form.snf} onChangeText={set('snf')} keyboardType="decimal-pad" error={err('snf')} />
         </Cols>
         <Field label={L('Remark', 'टिप्पणी')} value={form.remark} onChangeText={set('remark')} />
         {preview.message ? <Banner kind="error" text={preview.message} /> : (
           <View style={[s.banner, { backgroundColor: colors.primarySoft }]}>
-            <Text style={s.muted}>{L('Rate', 'रेट')}: {preview.rate ? `${money(preview.rate)} / ${settings.unit}` : '—'}{preview.kept ? ` (${L('original rate kept', 'पुराना रेट रखा')})` : ''}</Text>
+            <Text style={s.muted}>{L('Rate', 'रेट')}: {preview.rate ? `${money(preview.rate)} / ${preview.row.pay_unit === 'Magha' ? L('Magha', 'मघा') : litreName}` : '—'}{preview.kept ? ` (${L('original rate kept', 'पुराना रेट रखा')})` : ''}</Text>
+            {preview.row && preview.row.magha_qty != null ? <Text style={s.muted}>{preview.row.qty.toFixed(2)} {litreName} = {preview.row.magha_qty.toFixed(2)} {L('Magha', 'मघा')} · {L('Payment on', 'भुगतान')} {preview.row.pay_unit === 'Magha' ? L('Magha', 'मघा') : litreName}</Text> : null}
             <Text style={s.statValue}>{L('Amount', 'राशि')}: {preview.rate ? money(preview.amount) : '—'}</Text>
           </View>
         )}
@@ -147,7 +151,7 @@ export default function Purchase() {
         </Cols>
         {list.error ? <Banner kind="error" text={errorText(list.error, L)} /> : list.loading ? <Loading /> : (
           <>
-            <Text style={[s.bold, { marginBottom: 6 }]}>{list.data.total.n} {L('entries', 'एंट्री')} · {num(list.data.total.qty)} {settings.unit} · {money(list.data.total.amount)}</Text>
+            <Text style={[s.bold, { marginBottom: 6 }]}>{list.data.total.n} {L('entries', 'एंट्री')} · {qtyText(list.data.total.qty, list.data.total.magha)} · {money(list.data.total.amount)}</Text>
             {!list.data.rows.length && <Empty text={L('No entries for these filters', 'इन फ़िल्टर पर कोई एंट्री नहीं')} />}
             {list.data.rows.map((r) => (
               <View key={r.id} style={s.option}>
@@ -155,7 +159,7 @@ export default function Purchase() {
                   <View style={{ flex: 1 }}>
                     <Text style={s.bold}>{r.milkman_code} · {r.milkman_name || '?'}</Text>
                     <Text style={s.muted}>{date(r.date)} · {r.shift === 'Morning' ? L('Morning', 'सुबह') : L('Evening', 'शाम')} · {r.milk_type || '—'}</Text>
-                    <Text style={s.muted}>{num(r.qty)} {settings.unit} · Fat {r.fat} · SNF {r.snf} · {money(r.rate)}</Text>
+                    <Text style={s.muted}>{qtyOf(r)} · Fat {r.fat} · SNF {r.snf} · {money(r.rate)} / {r.pay_unit === 'Magha' ? L('Magha', 'मघा') : litreName}</Text>
                     {r.remark ? <Text style={s.muted}>{r.remark}</Text> : null}
                   </View>
                   <Text style={s.bold}>{money(r.amount)}</Text>

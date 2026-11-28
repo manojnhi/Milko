@@ -10,7 +10,7 @@ const ORIGIN = `http://127.0.0.1:${PORT}`;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
-  '.wasm': 'application/wasm', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.ttf': 'font/ttf', '.svg': 'image/svg+xml',
+  '.wasm': 'application/wasm', '.png': 'image/png', '.otf': 'font/otf', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.ttf': 'font/ttf', '.svg': 'image/svg+xml',
 };
 
 // packaged: resources/web, dev: ../dist

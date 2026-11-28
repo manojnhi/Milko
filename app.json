@@ -2,15 +2,15 @@
   "expo": {
     "name": "Milko",
     "slug": "milko",
-    "version": "2.0.0",
+    "version": "2.3.0",
     "orientation": "default",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.milko.app",
-      "versionCode": 2,
+      "versionCode": 5,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#175c47"
+        "backgroundColor": "#cfdefb"
       }
     },
     "plugins": [
@@ -29,7 +29,7 @@
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 200,
-          "backgroundColor": "#175c47"
+          "backgroundColor": "#cfdefb"
         }
       ]
     ],

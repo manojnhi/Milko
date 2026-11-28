@@ -3,7 +3,7 @@
 import { hashPassword } from './auth.js';
 import { write } from './tx.js';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // Purane app (v1.0.0) ka schema, bilkul waisa hi.
 export const LEGACY_SCHEMA = `
@@ -97,6 +97,28 @@ const steps = {
       await db.runAsync('UPDATE tbl_User SET password = ?, must_change = ? WHERE id = ?',
         [hashPassword(u.password, randomBytes), u.password === 'admin' ? 1 : 0, u.id]);
     }
+  },
+
+  // v3: har milkman ka apna dated price aur Litre / Magha.
+  3: async (db) => {
+    await addColumn(db, 'Milkman_tbl', 'pay_unit', "TEXT NOT NULL DEFAULT 'L'");
+    await addColumn(db, 'Milkman_tbl', 'rate_mode', "TEXT NOT NULL DEFAULT 'common'");
+    await addColumn(db, 'Purchase', 'pay_unit', "TEXT NOT NULL DEFAULT 'L'");
+    await addColumn(db, 'Purchase', 'magha_qty', 'REAL');
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS Milkman_rate (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        milkman_code INTEGER NOT NULL,
+        applicable_date TEXT NOT NULL,
+        price REAL NOT NULL,
+        std_fat REAL NOT NULL,
+        std_snf REAL NOT NULL,
+        fat_share REAL NOT NULL,
+        above_std INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT, deleted_at TEXT
+      );
+      UPDATE Milkman_tbl SET rate_mode = 'fixed' WHERE custom_rate > 0;
+    `);
   },
 };
 

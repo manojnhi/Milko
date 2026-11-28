@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Linking, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, TouchableOpacity, View } from 'react-native';
 import * as repo from '../core/repo.js';
-import { today } from '../core/dates.js';
+import { isISODate, today } from '../core/dates.js';
+import { linkedRate } from '../core/units.js';
+import { parseNum } from '../core/money.js';
 import { hasCamera, pickPhoto } from '../platform/photo';
 import { errorText, useApp, useLoad } from '../app-context';
-import { Avatar, Banner, Button, Card, Chips, Cols, DateField, Empty, Field, Loading, More, Screen, s } from '../ui';
+import { Avatar, Banner, Button, Card, Chips, Cols, DateField, Empty, Field, Loading, More, Screen, s, colors, Text } from '../ui';
 
 export default function Milkmen() {
-  const { db, user, L, money, num, date, settings, notify, confirm, changed, fail, go } = useApp();
+  const { db, user, L, money, date, settings, notify, confirm, changed, fail, go, qtyOf, litreName } = useApp();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('active');
   const [limit, setLimit] = useState(50);
@@ -28,21 +30,27 @@ export default function Milkmen() {
     if (view.mode !== 'detail') return null;
     const m = await repo.getMilkman(db, view.code);
     const [balance] = await repo.balances(db, { milkman: view.code, to: today() });
-    return { m, balance, photo: await repo.getPhoto(db, view.code), recent: await repo.listPurchases(db, { milkman: view.code }, 10) };
+    return { m, balance, photo: await repo.getPhoto(db, view.code), recent: await repo.listPurchases(db, { milkman: view.code }, 10), prices: await repo.listPrices(db, view.code) };
   }, [view.mode, view.code]);
 
   const set = (k) => (v) => { setError(null); setForm((f) => ({ ...f, [k]: v })); };
+  const setPrice = (k) => (v) => { setError(null); setForm((f) => ({ ...f, price: { ...f.price, [k]: v } })); };
+  const newPrice = () => ({ applicable_date: today(), price: '', std_fat: '6.5', std_snf: '9', fat_share: '52', above_std: 1 });
+  const unitName = (u) => (u === 'Magha' ? L('Magha', 'मघा') : litreName);
 
   const add = async () => {
     try {
       setForm({ milkman_code: String(await repo.nextCode(db)), milkman_name: '', milk_type: data.types.find((t) => t.active)?.name || 'Cow',
-        phone: '', address: '', joining_date: today(), custom_rate: '', notes: '', photo: undefined, preview: '' });
+        phone: '', address: '', joining_date: today(), custom_rate: '', notes: '', pay_unit: 'L', rate_mode: 'common', price: newPrice(), photo: undefined, preview: '' });
       setError(null);
       setView({ mode: 'form', isNew: true });
     } catch (e) { fail(e); }
   };
   const edit = (m, photo) => {
-    setForm({ ...m, milkman_code: String(m.milkman_code), phone: m.phone || '', address: m.address || '', joining_date: m.joining_date || '',
+    const p = detail.data?.prices[0];
+    // Nayi lagu-tareekh aaj ki: purani entries aur purana price history waise hi rehte hain.
+    const price = p ? { applicable_date: p.applicable_date, price: String(p.price), std_fat: String(p.std_fat), std_snf: String(p.std_snf), fat_share: String(p.fat_share), above_std: p.above_std } : newPrice();
+    setForm({ price, original: price, ...m, milkman_code: String(m.milkman_code), phone: m.phone || '', address: m.address || '', joining_date: m.joining_date || '',
       custom_rate: m.custom_rate ? String(m.custom_rate) : '', notes: m.notes || '', photo: undefined, preview: photo });
     setError(null);
     setView({ mode: 'form', isNew: false, code: m.milkman_code });
@@ -62,7 +70,15 @@ export default function Milkmen() {
   const save = async () => {
     setBusy(true);
     try {
-      const m = await repo.saveMilkman(db, form, { isNew: view.isNew, photo: form.photo, user: user.username });
+      let price = form.price;
+      const o = form.original;
+      // Price badla par tareekh nahi badli: naya price aaj se maana jata hai.
+      if (o && o.price && price.applicable_date === o.applicable_date && ['price', 'std_fat', 'std_snf', 'fat_share', 'above_std'].some((k) => String(price[k]) !== String(o[k]))) {
+        const ok = await confirm({ title: L('Change price from which date?', 'नया भाव कब से?'), message: L(`The new price will apply from ${date(today())}. To use another date, cancel and change "Price From Date".`, `नया भाव ${date(today())} से लगेगा। दूसरी तारीख के लिए Cancel करके तारीख बदलें।`) });
+        if (!ok) return;
+        price = { ...price, applicable_date: today() };
+      }
+      const m = await repo.saveMilkman(db, form, { isNew: view.isNew, photo: form.photo, user: user.username, price });
       notify(L('Milkman saved', 'दूधवाला सेव हुआ'));
       changed();
       setView({ mode: 'detail', code: m.milkman_code });
@@ -77,6 +93,18 @@ export default function Milkmen() {
   };
 
   const err = (field) => (error?.field === field ? errorText(error, L) : undefined);
+
+  const removePrice = async (p) => {
+    const ok = await confirm({ title: L('Remove this price?', 'यह भाव हटाएँ?'), message: `${date(p.applicable_date)} · ${money(p.price)}\n${L('Saved entries keep their rate.', 'पुरानी एंट्री का रेट नहीं बदलेगा।')}`, danger: true });
+    if (!ok) return;
+    try { await repo.deletePrice(db, p.id, user.username); changed(); } catch (e) { fail(e); }
+  };
+  const sample = (fat, snf) => {
+    const p = form.price;
+    const v = { price: parseNum(p.price), std_fat: parseNum(p.std_fat), std_snf: parseNum(p.std_snf), fat_share: parseNum(p.fat_share), above_std: Number(p.above_std) };
+    if (!(v.price > 0 && v.std_fat > 0 && v.std_snf > 0 && v.fat_share >= 0) || !(fat >= 0)) return null;
+    return money(linkedRate(v, fat, snf));
+  };
 
   if (loadError) return <Screen><Banner kind="error" text={errorText(loadError, L)} /></Screen>;
   if (loading) return <Loading />;
@@ -102,8 +130,37 @@ export default function Milkmen() {
             <DateField optional label={L('Joining date', 'जुड़ने की तारीख')} value={form.joining_date} onChange={set('joining_date')} error={err('joining_date')} />
           </Cols>
           <Field label={L('Address', 'पता')} value={form.address} onChangeText={set('address')} multiline />
-          <Field label={`${L('Fixed rate', 'फिक्स रेट')} (${settings.currency}/${settings.unit})`} value={form.custom_rate} onChangeText={set('custom_rate')} keyboardType="decimal-pad" error={err('custom_rate')}
-            hint={L('Leave empty to use the rate formula from Rates', 'खाली रखें तो Rates का फॉर्मूला लगेगा')} />
+          {settings.unit === 'L' && (
+            <Chips label={L('Payment unit', 'भुगतान किस पर')} options={[['L', L('Litre', 'लीटर')], ['Magha', L('Magha', 'मघा')]]} value={form.pay_unit} onChange={set('pay_unit')} />
+          )}
+          <Chips label={L('Rate type', 'रेट का तरीका')} value={form.rate_mode} onChange={set('rate_mode')}
+            options={[['common', L('Common rate chart', 'सबका एक रेट')], ['own', L('Own price (fat/SNF)', 'अपना भाव (फैट/SNF)')], ['fixed', L('Fixed rate', 'फिक्स रेट')]]} />
+          {form.rate_mode === 'common' && <Text style={[s.muted, { marginBottom: 12 }]}>{L('Uses the formula saved in Rates for this milk type.', 'Rates में इस दूध के प्रकार का फॉर्मूला लगेगा।')}</Text>}
+          {form.rate_mode === 'fixed' && (
+            <Field label={`${L('Fixed rate', 'फिक्स रेट')} (${settings.currency} / ${unitName(form.pay_unit)})`} value={form.custom_rate} onChangeText={set('custom_rate')} keyboardType="decimal-pad" error={err('custom_rate')}
+              hint={L('Fat and SNF do not change this rate.', 'फैट/SNF से यह रेट नहीं बदलता।')} />
+          )}
+          {form.rate_mode === 'own' && (
+            <View style={[s.banner, { backgroundColor: colors.primarySoft }]}>
+              <Cols>
+                <Field label={`${L('Price', 'भाव')} (${settings.currency} / ${unitName(form.pay_unit)})`} value={form.price.price} onChangeText={setPrice('price')} keyboardType="decimal-pad" error={err('price') || err('rate')} />
+                <DateField label={L('Price from date', 'भाव कब से')} value={form.price.applicable_date} onChange={setPrice('applicable_date')} error={err('applicable_date')} />
+              </Cols>
+              <Cols>
+                <Field label={L('Standard fat', 'स्टैंडर्ड फैट')} value={form.price.std_fat} onChangeText={setPrice('std_fat')} keyboardType="decimal-pad" error={err('std_fat')} />
+                <Field label={L('Standard SNF', 'स्टैंडर्ड SNF')} value={form.price.std_snf} onChangeText={setPrice('std_snf')} keyboardType="decimal-pad" error={err('std_snf')} />
+                <Field label={L('Fat share %', 'फैट हिस्सा %')} value={form.price.fat_share} onChangeText={setPrice('fat_share')} keyboardType="decimal-pad" error={err('fat_share')} />
+              </Cols>
+              <Chips label={L('When fat/SNF is above standard', 'स्टैंडर्ड से ज़्यादा फैट/SNF पर')} value={Number(form.price.above_std)} onChange={setPrice('above_std')}
+                options={[[1, L('Rate goes up and down', 'रेट बढ़े और घटे')], [0, L('Only goes down', 'सिर्फ़ घटे')]]} />
+              {sample(parseNum(form.price.std_fat), parseNum(form.price.std_snf)) && (
+                <Text style={s.bold}>
+                  {[-0.5, 0, 0.5].map((d) => { const f = Math.round((parseNum(form.price.std_fat) + d) * 10) / 10; return `Fat ${f} → ${sample(f, parseNum(form.price.std_snf))}`; }).join('   ·   ')}
+                </Text>
+              )}
+              <Text style={s.muted}>{L('Example at standard SNF. At standard fat and SNF the rate equals the price.', 'उदाहरण स्टैंडर्ड SNF पर। स्टैंडर्ड फैट/SNF पर रेट = भाव।')}</Text>
+            </View>
+          )}
           <Field label={L('Notes', 'नोट')} value={form.notes} onChangeText={set('notes')} multiline />
           <Button busy={busy} icon="checkmark" title={L('Save', 'सेव करें')} onPress={save} />
           <Button kind="ghost" title={L('Cancel', 'रद्द करें')} onPress={() => setView(view.isNew ? { mode: 'list' } : { mode: 'detail', code: view.code })} />
@@ -131,7 +188,8 @@ export default function Milkmen() {
           {line(L('Phone', 'फ़ोन'), d.m.phone)}
           {line(L('Address', 'पता'), d.m.address)}
           {line(L('Joined', 'जुड़े'), date(d.m.joining_date))}
-          {line(L('Fixed rate', 'फिक्स रेट'), d.m.custom_rate ? money(d.m.custom_rate) : '')}
+          {line(L('Payment unit', 'भुगतान यूनिट'), unitName(d.m.pay_unit))}
+          {line(L('Rate type', 'रेट का तरीका'), d.m.rate_mode === 'fixed' ? `${L('Fixed', 'फिक्स')} ${money(d.m.custom_rate)}` : d.m.rate_mode === 'own' ? L('Own price (fat/SNF)', 'अपना भाव') : L('Common rate chart', 'सबका एक रेट'))}
           {line(L('Notes', 'नोट'), d.m.notes)}
           {line(L('Balance due', 'बकाया'), money(d.balance?.closing || 0))}
           <View style={[s.wrap, { marginTop: 10 }]}>
@@ -141,12 +199,26 @@ export default function Milkmen() {
             <Button small kind={d.m.active ? 'danger' : 'ghost'} title={d.m.active ? L('Deactivate', 'निष्क्रिय करें') : L('Reactivate', 'सक्रिय करें')} onPress={() => toggle(d.m)} />
           </View>
         </Card>
+        {d.m.rate_mode === 'own' && (
+          <Card>
+            <Text style={s.h2}>{L('Price history', 'भाव का इतिहास')}</Text>
+            {d.prices.map((p) => (
+              <View key={p.id} style={[s.row, s.option]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.bold}>{money(p.price)} / {unitName(d.m.pay_unit)} · {L('from', 'से')} {isISODate(p.applicable_date) ? date(p.applicable_date) : p.applicable_date}</Text>
+                  <Text style={s.muted}>Fat {p.std_fat} · SNF {p.std_snf} · {p.above_std ? L('up and down', 'बढ़े-घटे') : L('only down', 'सिर्फ़ घटे')}</Text>
+                </View>
+                {d.prices.length > 1 && <Button small kind="danger" title={L('Remove', 'हटाएँ')} onPress={() => removePrice(p)} />}
+              </View>
+            ))}
+          </Card>
+        )}
         <Card>
           <Text style={s.h2}>{L('Recent entries', 'हाल की एंट्री')}</Text>
           {!d.recent.length && <Empty text={L('No entries yet', 'अभी कोई एंट्री नहीं')} />}
           {d.recent.map((r) => (
             <View key={r.id} style={[s.row, s.option]}>
-              <Text style={s.muted}>{date(r.date)} · {r.shift === 'Morning' ? L('Morning', 'सुबह') : L('Evening', 'शाम')} · {num(r.qty)} {settings.unit}</Text>
+              <Text style={s.muted}>{date(r.date)} · {r.shift === 'Morning' ? L('Morning', 'सुबह') : L('Evening', 'शाम')} · {qtyOf(r)}</Text>
               <Text style={s.bold}>{money(r.amount)}</Text>
             </View>
           ))}

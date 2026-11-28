@@ -1,8 +1,12 @@
 import { write } from './tx.js';
 import { fail } from './errors.js';
-import { round2, parseNum, sumMoney } from './money.js';
+import { round2, parseNum, sumMoney, roundAmount, ROUNDING } from './money.js';
 import { isISODate, today, nowStamp } from './dates.js';
 import { hashPassword, verifyPassword } from './auth.js';
+import { factorOf, linkedRate, PAY_UNITS, QTY_DISPLAYS, toLitre, toMagha } from './units.js';
+import { properName } from './text.js';
+import { isLanguage } from './i18n.js';
+import { isTheme } from './themes.js';
 
 export const SHIFTS = ['Morning', 'Evening'];
 export const PAY_TYPES = ['payment', 'advance', 'adjustment'];
@@ -11,7 +15,7 @@ export const RATE_METHODS = ['fat_snf', 'fat', 'fixed'];
 
 export const DEFAULT_SETTINGS = {
   businessName: 'Milko Dairy', address: '', phone: '', logo: '', currency: '₹',
-  dateFormat: 'DD-MM-YYYY', language: 'en', unit: 'L', lockMinutes: '5',
+  dateFormat: 'DD-MM-YYYY', language: 'en', theme: 'light', unit: 'L', lockMinutes: '5', qtyDisplay: 'L', maghaFactor: '1.176', rounding: 'paise',
 };
 
 const clean = (v) => String(v ?? '').trim();
@@ -32,7 +36,15 @@ export async function getSettings(db) {
 export async function saveSettings(db, patch) {
   if ('businessName' in patch && !clean(patch.businessName)) fail('Business name is required', 'डेयरी का नाम ज़रूरी है', 'businessName');
   if ('phone' in patch && clean(patch.phone) && !validPhone(patch.phone)) fail('Enter a valid phone number', 'सही फ़ोन नंबर डालें', 'phone');
+  if ('language' in patch && !isLanguage(patch.language)) fail('Choose a language from the list', 'सूची से भाषा चुनें', 'language');
+  if ('theme' in patch && !isTheme(patch.theme)) fail('Choose a theme from the list', 'सूची से थीम चुनें', 'theme');
   const current = await getSettings(db);
+  if ('maghaFactor' in patch) {
+    const f = parseNum(patch.maghaFactor);
+    if (!(f > 0.5 && f < 3)) fail('Litre per Magha must be between 0.5 and 3', '1 मघा में लीटर 0.5 से 3 के बीच हो', 'maghaFactor');
+  }
+  if (patch.rounding && !ROUNDING.includes(patch.rounding)) fail('Choose paise or rupees', 'पैसे या रुपये चुनें', 'rounding');
+  if (patch.qtyDisplay && !QTY_DISPLAYS.includes(patch.qtyDisplay)) fail('Choose Litre, Magha or Both', 'लीटर, मघा या दोनों चुनें', 'qtyDisplay');
   if (patch.unit && patch.unit !== current.unit) {
     const c = await db.getFirstAsync('SELECT COUNT(*) c FROM Purchase');
     if (c.c > 0) fail('Milk unit cannot change after entries exist (quantities are not converted)',
@@ -40,7 +52,10 @@ export async function saveSettings(db, patch) {
   }
   await write(db, async () => {
     for (const [k, v] of Object.entries(patch)) {
-      if (k in DEFAULT_SETTINGS) await db.runAsync('INSERT OR REPLACE INTO Setting (key, value) VALUES (?,?)', [k, clean(v)]);
+      if (k in DEFAULT_SETTINGS) {
+        const value = k === 'businessName' || k === 'address' ? properName(v) : clean(v);
+        await db.runAsync('INSERT OR REPLACE INTO Setting (key, value) VALUES (?,?)', [k, value]);
+      }
     }
   });
 }
@@ -119,23 +134,29 @@ export const getMilkman = (db, code) => db.getFirstAsync('SELECT * FROM Milkman_
 export function checkMilkman(data) {
   const code = parseNum(data.milkman_code);
   if (!Number.isInteger(code) || code <= 0 || code > 999999999) fail('Code must be a positive whole number', 'कोड धनात्मक पूर्णांक होना चाहिए', 'milkman_code');
-  const name = clean(data.milkman_name);
+  const name = properName(data.milkman_name);
   if (!name) fail('Name is required', 'नाम ज़रूरी है', 'milkman_name');
   if (!clean(data.milk_type)) fail('Milk type is required', 'दूध का प्रकार चुनें', 'milk_type');
   if (clean(data.phone) && !validPhone(data.phone)) fail('Invalid phone number (10 digits)', 'फ़ोन नंबर गलत है (10 अंक)', 'phone');
   if (clean(data.joining_date) && !isISODate(clean(data.joining_date))) fail('Invalid joining date', 'जुड़ने की तारीख गलत है', 'joining_date');
+  const payUnit = clean(data.pay_unit) || 'L';
+  if (!PAY_UNITS.includes(payUnit)) fail('Unit must be Litre or Magha', 'यूनिट लीटर या मघा हो', 'pay_unit');
+  const mode = clean(data.rate_mode) || (clean(data.custom_rate) ? 'fixed' : 'common');
+  if (!['common', 'own', 'fixed'].includes(mode)) fail('Choose a rate type', 'रेट का तरीका चुनें', 'rate_mode');
+  if (mode === 'fixed' && !clean(data.custom_rate)) fail('Enter the fixed rate', 'फिक्स रेट डालें', 'custom_rate');
   let custom = null;
-  if (clean(data.custom_rate)) {
+  if (mode === 'fixed') {
     custom = parseNum(data.custom_rate);
     if (!(custom > 0)) fail('Fixed rate must be above 0 (or leave it empty)', 'फिक्स रेट 0 से ज़्यादा हो (या खाली छोड़ें)', 'custom_rate');
     custom = round2(custom);
   }
   return {
     milkman_code: code, milkman_name: name, milk_type: clean(data.milk_type), phone: clean(data.phone),
-    address: clean(data.address), joining_date: clean(data.joining_date), custom_rate: custom, notes: clean(data.notes),
+    address: properName(data.address), joining_date: clean(data.joining_date), custom_rate: custom, notes: clean(data.notes),
+    pay_unit: payUnit, rate_mode: mode,
   };
 }
-const MM_COLS = ['milkman_name', 'milk_type', 'phone', 'address', 'joining_date', 'custom_rate', 'notes'];
+const MM_COLS = ['milkman_name', 'milk_type', 'phone', 'address', 'joining_date', 'custom_rate', 'notes', 'pay_unit', 'rate_mode'];
 
 /** Transaction ke andar chalne wala insert/update. */
 export async function putMilkman(db, m, before, user) {
@@ -150,14 +171,61 @@ export async function putMilkman(db, m, before, user) {
   await audit(db, user, before ? 'update' : 'create', 'milkman', m.milkman_code, before, m);
 }
 
+/* ---------- milkman ka apna price ---------- */
+export function checkPrice(data) {
+  const date = clean(data.applicable_date);
+  if (!isISODate(date)) fail('Enter a valid price date', 'रेट की सही तारीख डालें', 'applicable_date');
+  const need = (key, min, max, en, hi) => {
+    const n = parseNum(data[key]);
+    if (!(n >= min && n <= max)) fail(en, hi, key);
+    return n;
+  };
+  return {
+    applicable_date: date,
+    price: round2(need('price', 0.01, 100000, 'Enter the milk price', 'दूध का भाव डालें')),
+    std_fat: need('std_fat', 0.1, 20, 'Standard fat must be above 0', 'स्टैंडर्ड फैट 0 से ज़्यादा हो'),
+    std_snf: need('std_snf', 0.1, 20, 'Standard SNF must be above 0', 'स्टैंडर्ड SNF 0 से ज़्यादा हो'),
+    fat_share: need('fat_share', 0, 100, 'Fat share must be 0 to 100', 'फैट हिस्सा 0 से 100 हो'),
+    above_std: Number(data.above_std) ? 1 : 0,
+  };
+}
+export const listPrices = (db, code) => db.getAllAsync(
+  'SELECT * FROM Milkman_rate WHERE milkman_code=? AND deleted_at IS NULL ORDER BY applicable_date DESC, id DESC', [code]);
+export const findPrice = (db, code, date) => db.getFirstAsync(
+  `SELECT * FROM Milkman_rate WHERE milkman_code=? AND applicable_date<=? AND deleted_at IS NULL
+   ORDER BY applicable_date DESC, id DESC LIMIT 1`, [code, date]);
+const PRICE_COLS = ['applicable_date', 'price', 'std_fat', 'std_snf', 'fat_share', 'above_std'];
+/** Naya dated price (purana history me rehta hai). Same value dobara nahi judti. */
+async function putPrice(db, code, price, user) {
+  const same = await db.getFirstAsync(
+    `SELECT 1 x FROM Milkman_rate WHERE milkman_code=? AND deleted_at IS NULL AND ${PRICE_COLS.map((c) => c + '=?').join(' AND ')}`,
+    [code, ...PRICE_COLS.map((c) => price[c])]);
+  const latest = await findPrice(db, code, price.applicable_date);
+  if (same && latest && PRICE_COLS.every((c) => latest[c] === price[c])) return;
+  await db.runAsync(
+    `INSERT INTO Milkman_rate (milkman_code, ${PRICE_COLS.join(', ')}, created_at) VALUES (?,${PRICE_COLS.map(() => '?').join(',')},?)`,
+    [code, ...PRICE_COLS.map((c) => price[c]), nowStamp()]);
+  await audit(db, user, 'create', 'milkman price', code, null, price);
+}
+export const deletePrice = (db, id, user) => write(db, async () => {
+  const before = await db.getFirstAsync('SELECT * FROM Milkman_rate WHERE id=?', [id]);
+  await db.runAsync('UPDATE Milkman_rate SET deleted_at=? WHERE id=?', [nowStamp(), id]);
+  await audit(db, user, 'delete', 'milkman price', before?.milkman_code, before);
+});
+
 /** photo: undefined = mat badlo, '' = hatao, data URI = naya. */
-export async function saveMilkman(db, data, { isNew, photo, user } = {}) {
+export async function saveMilkman(db, data, { isNew, photo, user, price } = {}) {
   const m = checkMilkman(data);
+  const checked = m.rate_mode === 'own' && price ? checkPrice(price) : null;
   await write(db, async () => {
     const before = await getMilkman(db, m.milkman_code);
     if (isNew && before) fail(`Code ${m.milkman_code} is already used`, `कोड ${m.milkman_code} पहले से है`, 'milkman_code');
     if (!isNew && !before) fail('Milkman not found', 'दूधवाला नहीं मिला');
     await putMilkman(db, m, before, user);
+    if (checked) await putPrice(db, m.milkman_code, checked, user);
+    if (m.rate_mode === 'own' && !(await db.getFirstAsync('SELECT 1 x FROM Milkman_rate WHERE milkman_code=? AND deleted_at IS NULL', [m.milkman_code]))) {
+      fail('Enter the milk price', 'दूध का भाव डालें', 'price');
+    }
     if (photo === '') await db.runAsync('DELETE FROM Photo WHERE milkman_code=?', [m.milkman_code]);
     else if (photo) await db.runAsync('INSERT OR REPLACE INTO Photo (milkman_code, data) VALUES (?,?)', [m.milkman_code, photo]);
   });
@@ -235,19 +303,27 @@ export function checkQuantities(data) {
   return { qty, fat, snf };
 }
 
-/** Rate priority: milkman ka fixed rate, warna rate table. */
-export async function priceEntry(db, { date, milkman, milkType, qty, fat, snf }) {
+/** Rate priority: milkman ka fixed rate / apna price, warna common rate table. */
+export async function priceEntry(db, { date, milkman, milkType, fat, snf }) {
   let rate;
-  if (milkman.custom_rate > 0) rate = round2(milkman.custom_rate);
-  else {
+  if (milkman.rate_mode === 'fixed' && milkman.custom_rate > 0) rate = round2(milkman.custom_rate);
+  else if (milkman.rate_mode === 'own') {
+    const own = await findPrice(db, milkman.milkman_code, date);
+    if (!own) fail(`No price for this milkman on or before ${date}. Add it in Milkmen.`,
+      `${date} या पहले का भाव नहीं है। दूधवाले में जोड़ें।`, 'rate');
+    rate = linkedRate(own, fat, snf);
+  } else {
     const row = await findRate(db, date, milkType);
     if (!row) fail(`No ${milkType} rate on or before ${date}. Add it in Rates.`,
       `${date} या पहले का ${milkType} रेट नहीं है। Rates में जोड़ें।`, 'rate');
     rate = calcRate(row, fat, snf);
   }
   if (!(rate > 0)) fail('Calculated rate is 0. Check Fat/SNF.', 'रेट 0 आ रहा है। Fat/SNF जाँचें।', 'rate');
-  return { rate, amount: round2(parseNum(qty) * rate) };
+  return rate;
 }
+
+/** Jis quantity par paisa banta hai (rate usi unit ka hota hai). */
+export const billedQty = (row) => (row.pay_unit === 'Magha' ? row.magha_qty : row.qty);
 
 export const findDuplicate = (db, { date, shift, milkman_code, milk_type }, exceptId = 0) => db.getFirstAsync(
   `SELECT * FROM Purchase WHERE deleted_at IS NULL AND date=? AND shift=? AND milkman_code=? AND milk_type=? AND id<>?`,
@@ -272,28 +348,40 @@ export async function previewPurchase(db, data, id) {
   }
   const milkType = clean(data.milk_type) || milkman.milk_type;
   const q = checkQuantities(data);
-  const keepRate = before && before.date === date && before.milkman_code === milkman.milkman_code
+  const settings = await getSettings(db);
+  const factor = factorOf(settings.maghaFactor);
+  const sameMilkman = before && before.milkman_code === milkman.milkman_code;
+  const payUnit = settings.unit !== 'L' ? 'L' : sameMilkman ? before.pay_unit : milkman.pay_unit || 'L';
+  // qty_unit: user ne Litre me likha ya Magha me. Database me qty hamesha Litre.
+  const typed = q.qty;
+  let magha = null;
+  if (settings.unit === 'L') {
+    if (data.qty_unit === 'Magha') { magha = round2(typed); q.qty = toLitre(typed, factor); }
+    else magha = before && before.qty === typed && before.magha_qty != null ? before.magha_qty : toMagha(typed, factor);
+    if (before && data.qty_unit === 'Magha' && before.magha_qty === magha) q.qty = before.qty;
+  }
+  const keepRate = before && before.date === date && sameMilkman
     && before.milk_type === milkType && before.fat === q.fat && before.snf === q.snf;
-  const priced = keepRate
-    ? { rate: before.rate, amount: q.qty === before.qty ? before.amount : round2(q.qty * before.rate) }
-    : await priceEntry(db, { date, milkman, milkType, ...q });
-  return {
-    before, milkman, keptRate: !!keepRate,
-    row: { date, shift: data.shift, milkman_code: milkman.milkman_code, milk_type: milkType, ...q, ...priced, remark: clean(data.remark) },
+  const rate = keepRate ? before.rate : await priceEntry(db, { date, milkman, milkType, ...q });
+  const row = {
+    date, shift: data.shift, milkman_code: milkman.milkman_code, milk_type: milkType, ...q,
+    pay_unit: payUnit, magha_qty: magha, rate, remark: clean(data.remark),
   };
+  row.amount = keepRate && before.qty === row.qty && before.magha_qty === row.magha_qty ? before.amount : roundAmount(billedQty(row) * rate, settings.rounding);
+  return { before, milkman, keptRate: !!keepRate, row };
 }
 
-const P_COLS = ['date', 'shift', 'milkman_code', 'milk_type', 'qty', 'fat', 'snf', 'rate', 'amount', 'remark'];
+const P_COLS = ['date', 'shift', 'milkman_code', 'milk_type', 'qty', 'fat', 'snf', 'rate', 'amount', 'remark', 'pay_unit', 'magha_qty'];
 export async function putPurchase(db, row, before, user, reason) {
   if (before) {
     await db.runAsync(`UPDATE Purchase SET ${P_COLS.map((c) => c + '=?').join(', ')}, updated_at=? WHERE id=?`,
-      [...P_COLS.map((c) => row[c]), nowStamp(), before.id]);
+      [...P_COLS.map((c) => row[c] ?? (c === 'pay_unit' ? 'L' : null)), nowStamp(), before.id]);
     await audit(db, user, 'update', 'purchase', before.id, before, row, reason);
     return before.id;
   }
   const res = await db.runAsync(
     `INSERT INTO Purchase (${P_COLS.join(', ')}, created_at) VALUES (${P_COLS.map(() => '?').join(',')}, ?)`,
-    [...P_COLS.map((c) => row[c]), nowStamp()]);
+    [...P_COLS.map((c) => row[c] ?? (c === 'pay_unit' ? 'L' : null)), nowStamp()]);
   await audit(db, user, 'create', 'purchase', res.lastInsertRowId, null, row);
   return res.lastInsertRowId;
 }
@@ -335,12 +423,14 @@ export function listPurchases(db, filters, limit = 0) {
      WHERE ${w.sql} ORDER BY p.date DESC, p.id DESC ${limit ? 'LIMIT ' + Number(limit) : ''}`, w.args);
 }
 /** SUM paise me, average fat/SNF quantity-weighted. */
-export const AGG = `COUNT(*) AS n, COALESCE(SUM(p.qty),0) AS qty,
+export const agg = (factor) => `COUNT(*) AS n, COALESCE(SUM(p.qty),0) AS qty,
+  COALESCE(SUM(COALESCE(p.magha_qty, ROUND(p.qty / ${factorOf(factor)}, 2))),0) AS magha,
   COALESCE(SUM(CAST(ROUND(p.amount*100) AS INTEGER)),0)/100.0 AS amount,
   SUM(p.qty*p.fat)/NULLIF(SUM(p.qty),0) AS avg_fat, SUM(p.qty*p.snf)/NULLIF(SUM(p.qty),0) AS avg_snf`;
-export function totalPurchases(db, filters) {
+export async function totalPurchases(db, filters) {
   const w = purchaseWhere(filters);
-  return db.getFirstAsync(`SELECT ${AGG} FROM Purchase p WHERE ${w.sql}`, w.args);
+  const { maghaFactor } = await getSettings(db);
+  return db.getFirstAsync(`SELECT ${agg(maghaFactor)} FROM Purchase p WHERE ${w.sql}`, w.args);
 }
 
 /* ---------- payments ---------- */

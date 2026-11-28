@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import * as repo from '../core/repo.js';
 import { today } from '../core/dates.js';
 import { errorText, useApp, useLoad } from '../app-context';
-import { Banner, Button, Card, Chips, DateField, Empty, Field, Loading, More, Screen, s } from '../ui';
+import { Banner, Button, Card, Chips, DateField, Empty, Field, Loading, More, Screen, s, Text } from '../ui';
 
 export default function Rates() {
   const { db, user, L, money, date, settings, notify, confirm, changed, fail } = useApp();

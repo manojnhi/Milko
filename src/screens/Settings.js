@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Image, Text, View } from 'react-native';
+import { Image, View } from 'react-native';
 import JSZip from 'jszip';
 import * as repo from '../core/repo.js';
 import { counts, createBackup, getSnapshot, parseBackup, restoreBackup } from '../core/backup.js';
@@ -10,12 +10,12 @@ import { pickPhoto } from '../platform/photo';
 import { pickFile, saveFile } from '../platform/files';
 import { randomBytes } from '../platform/random';
 import { errorText, useApp, useLoad } from '../app-context';
-import { Banner, Button, Card, Chips, Field, Screen, s } from '../ui';
+import { Banner, Button, Card, Chips, Field, LanguagePicker, Screen, s, Text, ThemePicker } from '../ui';
 
 const MAX_BACKUP = 60 * 1024 * 1024;
 
 export default function Settings() {
-  const { db, user, setUser, settings, reloadSettings, L, notify, confirm, changed, fail, go, date } = useApp();
+  const { db, user, setUser, settings, reloadSettings, setPref, L, notify, confirm, changed, fail, go, date } = useApp();
   const [form, setForm] = useState(settings);
   const [error, setError] = useState(null);
   const [cred, setCred] = useState({ current: '', username: user.username, password: '', repeat: '' });
@@ -29,6 +29,8 @@ export default function Settings() {
 
   const set = (k) => (v) => { setError(null); setForm((f) => ({ ...f, [k]: v })); };
   const setC = (k) => (v) => setCred((c) => ({ ...c, [k]: v }));
+  // Theme/language turant lagu hote hain aur save bhi (Save settings dabane ki zaroorat nahi).
+  const pref = (k) => (v) => { setForm((f) => ({ ...f, [k]: v })); setPref({ [k]: v }); };
   const err = (field) => (error?.field === field ? errorText(error, L) : undefined);
 
   const work = (name, task) => async () => {
@@ -65,7 +67,7 @@ export default function Settings() {
     const sheet = (name, rows) => ({ name, rows: rows.length ? [Object.keys(rows[0]), ...rows.map((r) => Object.values(r))] : [['No data']] });
     const t = data.tables;
     await saveFile(`milko-all-data-${today()}.xlsx`, await writeXlsx(JSZip, [
-      sheet('Milkmen', t.Milkman_tbl), sheet('Rates', t.Rate_tbl), sheet('Purchases', t.Purchase), sheet('Payments', t.Payment),
+      sheet('Milkmen', t.Milkman_tbl), sheet('Rates', t.Rate_tbl), sheet('Milkman Prices', t.Milkman_rate), sheet('Purchases', t.Purchase), sheet('Payments', t.Payment),
     ]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   });
 
@@ -106,6 +108,18 @@ export default function Settings() {
   return (
     <Screen>
       <Card>
+        <Text style={s.h2}>{L('Appearance', 'दिखावट')}</Text>
+        <View style={s.field}>
+          <Text style={s.label}>Language / भाषा</Text>
+          <LanguagePicker />
+        </View>
+        <View style={s.field}>
+          <Text style={s.label}>{L('Theme', 'थीम')}</Text>
+          <ThemePicker value={form.theme} onChange={pref('theme')} />
+        </View>
+      </Card>
+
+      <Card>
         <Text style={s.h2}>{L('Business profile', 'डेयरी प्रोफ़ाइल')}</Text>
         <View style={s.wrap}>
           {form.logo ? <Image accessibilityLabel="Logo" source={{ uri: form.logo }} resizeMode="contain" style={{ width: 80, height: 80 }} /> : null}
@@ -117,8 +131,18 @@ export default function Settings() {
         <Field label={L('Phone', 'फ़ोन')} value={form.phone} onChangeText={set('phone')} keyboardType="phone-pad" error={err('phone')} />
         <Chips label={L('Currency', 'मुद्रा')} options={['₹', 'Rs.', '$', '€', '£']} value={form.currency} onChange={set('currency')} />
         <Chips label={L('Date format', 'तारीख format')} options={DATE_FORMATS} value={form.dateFormat} onChange={set('dateFormat')} />
-        <Chips label="Language / भाषा" options={[['en', 'English'], ['hi', 'हिन्दी']]} value={form.language} onChange={set('language')} />
         <Chips label={L('Milk unit', 'दूध की यूनिट')} options={[['L', 'Litre'], ['Kg', 'Kg']]} value={form.unit} onChange={set('unit')} />
+        {form.unit === 'L' && (
+          <>
+            <Chips label={L('Show quantity in', 'मात्रा किसमें दिखाएँ')} options={[['L', L('Litre', 'लीटर')], ['Magha', L('Magha', 'मघा')], ['both', L('Both', 'दोनों')]]} value={form.qtyDisplay} onChange={set('qtyDisplay')} />
+            <Field label={L('Litres in 1 Magha', '1 मघा में कितने लीटर')} value={form.maghaFactor} onChangeText={set('maghaFactor')} keyboardType="decimal-pad" error={err('maghaFactor')}
+              hint={L('Old Milko database uses 1.176. Saved entries do not change.', 'पुराने Milko database में 1.176 था। पुरानी एंट्री नहीं बदलतीं।')} />
+          </>
+        )}
+        <Chips label={L('Amount rounding', 'राशि की राउंडिंग')} options={[['paise', L('Keep paise', 'पैसे सहित')], ['rupee', L('Round to rupees', 'पूरे रुपये में')]]} value={form.rounding} onChange={set('rounding')} />
+        <Text style={[s.muted, { marginBottom: 10 }]}>{form.rounding === 'rupee'
+          ? L('Example: ₹2,287.49 becomes ₹2,287 and ₹2,287.50 becomes ₹2,288. Applies to new and changed entries only.', 'उदाहरण: ₹2,287.49 = ₹2,287 और ₹2,287.50 = ₹2,288। सिर्फ़ नई और बदली गई एंट्री पर।')
+          : L('Amounts are kept up to 2 decimals. Saved entries do not change.', 'राशि पैसे तक रहती है। पुरानी एंट्री नहीं बदलती।')}</Text>
         {info.data?.entries > 0 && <Text style={[s.muted, { marginBottom: 10 }]}>{L('Unit is locked because entries exist.', 'एंट्री होने के कारण यूनिट बदली नहीं जा सकती।')}</Text>}
         <Chips label={L('Auto-lock after leaving the app', 'app छोड़ने पर auto-lock')} options={[['1', '1 min'], ['5', '5 min'], ['15', '15 min'], ['0', L('Off', 'बंद')]]} value={form.lockMinutes} onChange={set('lockMinutes')} />
         <Button busy={busy === 'save'} title={L('Save settings', 'सेटिंग सेव करें')} onPress={save} />

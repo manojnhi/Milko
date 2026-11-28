@@ -3,6 +3,12 @@ export const round2 = (n) => {
   const v = Number(n) || 0;
   return (Math.sign(v) * Math.round((Math.abs(v) + Number.EPSILON) * 100)) / 100 || 0;
 };
+export const ROUNDING = ['paise', 'rupee'];
+/** Entry ka amount: 'rupee' = poore rupaye (50 paise aur upar = agla rupaya), warna paise tak. */
+export const roundAmount = (v, mode) => {
+  const p = round2(v);
+  return mode === 'rupee' ? Math.sign(p) * Math.round(Math.abs(p)) || 0 : p;
+};
 /** Float drift se bachne ke liye paise (integer) me jodo. */
 export const sumMoney = (list) => list.reduce((a, v) => a + Math.round(round2(v) * 100), 0) / 100;
 export const parseNum = (v) => {

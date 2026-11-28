@@ -1,13 +1,13 @@
 {
   "name": "milko",
-  "version": "2.0.0",
+  "version": "2.3.0",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "web": "expo start --web",
     "export:web": "expo export -p web",
-    "test": "node --test tests/core.test.mjs"
+    "test": "node --test tests/core.test.mjs tests/i18n.test.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.0",

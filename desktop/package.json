@@ -1,6 +1,6 @@
 {
   "name": "milko-desktop",
-  "version": "2.0.0",
+  "version": "2.3.0",
   "description": "Milko desktop (Windows exe)",
   "main": "main.js",
   "author": "Milko",

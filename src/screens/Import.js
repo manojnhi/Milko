@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import JSZip from 'jszip';
 import { autoMap, commitImport, IMPORT_TYPES, MAX_BYTES, MAX_ROWS, templateRows, validateImport } from '../core/importer.js';
 import { decodeText, parseCSV, toCSV } from '../core/csv.js';
@@ -7,7 +7,7 @@ import { openXlsx, writeXlsx } from '../core/xlsx.js';
 import { DATE_FORMATS } from '../core/dates.js';
 import { pickFile, saveFile } from '../platform/files';
 import { errorText, useApp } from '../app-context';
-import { Banner, Button, Card, Chips, Loading, Screen, Table, s, colors } from '../ui';
+import { Banner, Button, Card, Chips, Loading, Screen, Table, s, colors, Text } from '../ui';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const tick = () => new Promise((r) => setTimeout(r, 30));

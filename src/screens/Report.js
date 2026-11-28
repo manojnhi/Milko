@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import JSZip from 'jszip';
 import * as repo from '../core/repo.js';
 import { buildReport, cellValue, REPORT_TYPES, reportMatrix } from '../core/reports.js';
@@ -9,12 +9,14 @@ import { toCSV } from '../core/csv.js';
 import { writeXlsx } from '../core/xlsx.js';
 import { pdfMode, printHtml, saveFile, savePdf } from '../platform/files';
 import { errorText, useApp, useLoad } from '../app-context';
-import { Banner, Button, Card, Chips, Cols, DateField, Empty, Loading, MilkmanPicker, Screen, Stat, Table, s } from '../ui';
+import { Banner, Button, Card, Chips, Cols, DateField, Empty, Loading, MilkmanPicker, Screen, Stat, Table, s, Text } from '../ui';
 
 const PREVIEW = 200;
 
 export default function Report() {
-  const { db, route, L, date, settings, fail } = useApp();
+  const { db, route, L, date, settings, fail, qtyDisplay, factor } = useApp();
+  const [pickedQty, setQtyView] = useState(null);
+  const qtyView = pickedQty || qtyDisplay;
   const [type, setType] = useState(route.params.type || 'daily');
   const [f, setF] = useState({ from: today().slice(0, 8) + '01', to: today(), milkman: route.params.milkman || '', milkType: '', shift: '' });
   const [busy, setBusy] = useState('');
@@ -24,8 +26,8 @@ export default function Report() {
     : f.from && f.to && f.from > f.to ? L('"From" is after "To"', '"से" तारीख "तक" के बाद है') : '';
 
   const base = useLoad(async () => ({ milkmen: await repo.listMilkmen(db), types: await repo.listMilkTypes(db) }), []);
-  const report = useLoad(async () => (dateError ? null : buildReport(db, type, f, L, settings.dateFormat)),
-    [type, f.from, f.to, f.milkman, f.milkType, f.shift, settings.language, settings.dateFormat]);
+  const report = useLoad(async () => (dateError ? null : buildReport(db, type, f, L, settings.dateFormat, { display: qtyView, factor, unit: settings.unit })),
+    [type, f.from, f.to, f.milkman, f.milkType, f.shift, settings.language, settings.dateFormat, qtyView]);
 
   if (base.loading) return <Loading />;
   const r = report.data;
@@ -39,7 +41,7 @@ export default function Report() {
         `${L('Period', 'अवधि')}: ${type === 'pending' ? L('all', 'शुरू') : date(f.from) || L('all', 'शुरू')} – ${date(f.to) || L('today', 'आज')}`,
         `${L('Milkman', 'दूधवाला')}: ${who ? `${who.milkman_code} ${who.milkman_name}` : L('All', 'सभी')}`,
         ...(usesShift ? [`${L('Milk type', 'प्रकार')}: ${f.milkType || L('All', 'सभी')} · ${L('Shift', 'शिफ्ट')}: ${f.shift || L('All', 'सभी')}`] : []),
-        `${L('Quantity unit', 'मात्रा यूनिट')}: ${settings.unit} · ${L('Currency', 'मुद्रा')}: ${settings.currency}`,
+        `${L('Quantity unit', 'मात्रा यूनिट')}: ${settings.unit !== 'L' ? 'Kg' : { L: L('Litre', 'लीटर'), Magha: L('Magha', 'मघा'), both: L('Litre and Magha', 'लीटर और मघा') }[qtyView]} · ${L('Currency', 'मुद्रा')}: ${settings.currency}`,
       ],
       generated: `${L('Generated', 'बनाया गया')}: ${localDateTime()}`,
     };
@@ -74,6 +76,9 @@ export default function Report() {
           <DateField optional label={L('From', 'से')} value={f.from} onChange={set('from')} />
           <DateField optional label={L('To', 'तक')} value={f.to} onChange={set('to')} />
         </Cols>
+        {settings.unit === 'L' && type !== 'ledger' && type !== 'pending' && (
+          <Chips label={L('Show quantity in', 'मात्रा किसमें दिखाएँ')} options={[['L', L('Litre', 'लीटर')], ['Magha', L('Magha', 'मघा')], ['both', L('Both', 'दोनों')]]} value={qtyView} onChange={setQtyView} />
+        )}
         <MilkmanPicker allowAll label={L('Milkman', 'दूधवाला')} list={base.data.milkmen} value={f.milkman} onChange={set('milkman')} />
         {usesShift && (
           <Cols>

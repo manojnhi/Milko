@@ -1,13 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, BackHandler, Image, KeyboardAvoidingView, Platform, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { AppState, BackHandler, Image, KeyboardAvoidingView, Platform, TouchableOpacity, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
+import { titleCase } from './src/core/text.js';
+import { factorOf, toMagha } from './src/core/units.js';
 import { getDb } from './src/db';
-import { getSettings, DEFAULT_SETTINGS } from './src/core/repo.js';
+import { getSettings, saveSettings, DEFAULT_SETTINGS } from './src/core/repo.js';
+import { translate } from './src/core/i18n.js';
+import { resolveTheme } from './src/core/themes.js';
 import { fmtMoney, fmtNum } from './src/core/money.js';
 import { formatDate } from './src/core/dates.js';
 import { AppContext, errorText } from './src/app-context';
-import { Banner, Button, colors, Field, Icon, Loading, s, Sheet } from './src/ui';
+import { NAV_ICONS } from './src/navIcons';
+import { applyTheme, Banner, Button, colors, Field, Loading, s, Sheet, FONTS, Text } from './src/ui';
 import Login from './src/screens/Login';
 import Dashboard from './src/screens/Dashboard';
 import Milkmen from './src/screens/Milkmen';
@@ -61,7 +67,20 @@ function Root() {
   const timer = useRef(null);
   const away = useRef(null);
 
-  const L = useCallback((en, hi) => (settings.language === 'hi' ? hi || en : en), [settings.language]);
+  // Hindi code me inline (L('English', 'हिन्दी')); baaki Indian languages translations.js se. Na mile to English.
+  const L = useCallback((en, hi) => {
+    const lang = settings.language;
+    if (lang === 'hi') return hi || en;
+    if (lang !== 'en') { const t = translate(lang, en); if (t) return t; }
+    return titleCase(en);
+  }, [settings.language]);
+
+  // Theme: palette render se pehle lagta hai, taaki is render ke saare child naye rang dekhein.
+  const systemDark = useColorScheme() === 'dark';
+  const palette = resolveTheme(settings.theme, systemDark);
+  applyTheme(palette.c);
+  // Font load fail ho to bhi app system font se chalta hai.
+  const [fontsLoaded, fontError] = useFonts(FONTS);
 
   const open = useCallback(async () => {
     setFatal(null);
@@ -108,10 +127,23 @@ function Root() {
   const confirm = useCallback((opts) => new Promise((resolve) => { setReason(''); setDialog({ ...opts, resolve }); }), []);
   const close = (value) => { dialog.resolve(value); setDialog(null); };
 
+  const factor = factorOf(settings.maghaFactor);
+  const qtyDisplay = settings.unit === 'L' ? settings.qtyDisplay : 'L';
+  const litreName = settings.unit === 'L' ? L('Litre', 'लीटर') : 'Kg';
+  const qtyText = (litre, magha) => {
+    const l = `${fmtNum(litre)} ${litreName}`;
+    const m = `${fmtNum(magha)} ${L('Magha', 'मघा')}`;
+    return qtyDisplay === 'Magha' ? m : qtyDisplay === 'both' ? `${l} / ${m}` : l;
+  };
+
   const app = {
+    qtyText, qtyDisplay, factor, litreName,
+    qtyOf: (row) => qtyText(row.qty, row.magha_qty ?? toMagha(row.qty, factor)),
     db, user, setUser, settings, L, wide, go, route, logout, notify, confirm, revision,
     changed: () => setRevision((r) => r + 1),
     reloadSettings: async () => { setSettings(await getSettings(db)); setRevision((r) => r + 1); },
+    // Language/theme turant lagu + database me save (Save button ka intezaar nahi).
+    setPref: async (patch) => { try { await saveSettings(db, patch); setSettings(await getSettings(db)); } catch (e) { notify(errorText(e, L), 'error'); } },
     fail: (e) => notify(errorText(e, L), 'error'),
     money: (v) => fmtMoney(v, settings.currency),
     num: fmtNum,
@@ -126,49 +158,57 @@ function Root() {
         <Button title="Retry / दोबारा" onPress={open} />
       </View>
     );
-  } else if (!db) body = <Loading />;
-  else if (!user || user.must_change) body = <Login />;
+  } else if (!db || (!fontsLoaded && !fontError)) body = <Loading />;
+  else if (!user || user.must_change) {
+    body = (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <Login />
+      </View>
+    );
+  }
   else {
     const [Current, , en, hi] = SCREENS[route.name];
     const nav = (name) => {
-      const [, icon, e, h] = SCREENS[name];
+      const [, , e, h] = SCREENS[name];
       const active = route.name === name || (!wide && name === 'menu' && !TABS.includes(route.name));
-      const color = wide ? '#fff' : active ? colors.primary : colors.muted;
+      const color = active ? colors.buttonText : wide ? colors.text : colors.muted;
       return (
         <TouchableOpacity key={name} accessibilityRole="button" accessibilityState={{ selected: active }} accessibilityLabel={L(e, h)} onPress={() => go(name)}
           style={wide
-            ? { flexDirection: 'row', gap: 12, alignItems: 'center', minHeight: 46, paddingHorizontal: 14, borderRadius: 10, backgroundColor: active ? colors.primary : 'transparent' }
-            : { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 54 }}>
-          <Icon name={icon} size={wide ? 19 : 22} color={color} />
-          <Text numberOfLines={1} style={{ color, fontSize: wide ? 15 : 11, fontWeight: active ? '800' : '500' }}>{L(e, h)}</Text>
+            ? { flexDirection: 'row', gap: 12, alignItems: 'center', minHeight: 46, paddingHorizontal: 14, borderRadius: 10, backgroundColor: active ? colors.button : 'transparent' }
+            : { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 58, backgroundColor: active ? colors.primarySoft : colors.bar }}>
+          <Image source={NAV_ICONS[name]} style={{ width: wide ? 32 : 28, height: wide ? 32 : 28 }} />
+          <Text numberOfLines={1} style={{ color, fontSize: wide ? 15 : 11, fontWeight: active ? '700' : '400' }}>{L(e, h)}</Text>
         </TouchableOpacity>
       );
     };
     body = (
       <View style={{ flex: 1, flexDirection: wide ? 'row' : 'column' }}>
         {wide && (
-          <View style={{ width: 220, backgroundColor: colors.side, padding: 12, gap: 4 }}>
+          <View style={{ width: 220, backgroundColor: colors.side, padding: 12, gap: 4, borderRightWidth: 1, borderColor: colors.border }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 4, marginBottom: 12 }}>
               <Image source={require('./assets/logo.png')} accessibilityLabel="Milko" style={{ width: 44, height: 44 }} />
-              <Text numberOfLines={2} style={{ color: '#fff', fontSize: 17, fontWeight: '800', flex: 1 }}>{settings.businessName}</Text>
+              <Text numberOfLines={2} style={{ color: colors.text, fontSize: 16, fontWeight: '700', flex: 1 }}>{settings.businessName}</Text>
             </View>
             {Object.keys(SCREENS).filter((k) => k !== 'menu').map(nav)}
           </View>
         )}
         <View style={{ flex: 1, minHeight: 0 }}>
-          <View style={[s.row, { backgroundColor: '#fff', paddingHorizontal: 14, minHeight: 56, borderBottomWidth: 1, borderColor: colors.border }]}>
+          <View style={[s.row, { backgroundColor: colors.bar, paddingHorizontal: 14, minHeight: 56, borderBottomWidth: 1, borderColor: colors.border }]}>
             {!wide && <Image source={require('./assets/logo.png')} accessibilityLabel="Milko" style={{ width: 36, height: 36 }} />}
             <View style={{ flex: 1 }}>
-              <Text accessibilityRole="header" style={{ fontSize: 18, fontWeight: '800', color: colors.text }}>{L(en, hi)}</Text>
+              <Text accessibilityRole="header" style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>{L(en, hi)}</Text>
               {!wide && <Text numberOfLines={1} style={s.muted}>{settings.businessName}</Text>}
             </View>
             <Button small kind="ghost" icon="lock-closed-outline" title={L('Lock', 'लॉक')} onPress={logout} />
           </View>
-          <ErrorBoundary key={route.name}>
-            <Current />
-          </ErrorBoundary>
+          <View style={{ flex: 1, minHeight: 0, backgroundColor: colors.bg }}>
+            <ErrorBoundary key={route.name}>
+              <Current />
+            </ErrorBoundary>
+          </View>
         </View>
-        {!wide && <View style={{ flexDirection: 'row', backgroundColor: '#fff', borderTopWidth: 1, borderColor: colors.border }}>{TABS.map(nav)}</View>}
+        {!wide && <View style={{ flexDirection: 'row', backgroundColor: colors.bar, borderTopWidth: 1, borderColor: colors.border }}>{TABS.map(nav)}</View>}
       </View>
     );
   }
@@ -176,14 +216,14 @@ function Root() {
   return (
     <AppContext.Provider value={app}>
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
-        <StatusBar style="dark" />
+        <StatusBar style={palette.c.dark ? 'light' : 'dark'} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
           {body}
         </KeyboardAvoidingView>
         {toast && (
           <View pointerEvents="none" style={{ position: 'absolute', left: 12, right: 12, bottom: 72, alignItems: 'center' }}>
             <View accessibilityLiveRegion="polite" accessibilityRole="alert" style={{ backgroundColor: toast.kind === 'error' ? colors.danger : colors.ok, borderRadius: 10, padding: 12, maxWidth: 520 }}>
-              <Text style={{ color: '#fff', fontWeight: '700' }}>{toast.text}</Text>
+              <Text style={{ color: colors.onStrong, fontWeight: '700' }}>{toast.text}</Text>
             </View>
           </View>
         )}

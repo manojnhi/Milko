@@ -95,6 +95,25 @@ Rate screen se har rate ke liye chunein:
 Entry date ke din ya usse pehle ka latest rate lagta hai. Milkman ka "Fixed rate" bhara ho to wahi lagta hai.
 Amount = Quantity × Rate (2 decimal). Edit me agar date, milkman, type, fat, SNF nahi badle to purana rate rehta hai.
 
+### Milkman ka apna price (v2.1)
+Milkmen > Edit > Rate Type > **Own Price (Fat/SNF)**:
+`Rate = Price × (FatShare × Fat/StdFat + (100 − FatShare) × SNF/StdSNF) / 100`
+Default Std Fat 6.5, Std SNF 9, Fat Share 52 (purane Access database jaisa). "Rate Goes Up And Down" ya
+"Only Goes Down" (purana system) chunein. Price tareekh ke saath history me rehta hai.
+
+Priority: Fixed rate / Own price (jo chuna ho), warna common Rates screen.
+
+### Litre aur Magha
+`Magha = Litre / 1.176` (Settings me badal sakte hain). Entry Litre ya Magha me likh sakte hain; database me dono save hote
+hain. Payment unit milkman par set hota hai: amount = us unit ki quantity × rate. "Show Quantity In" (Litre / Magha / Both)
+Settings aur Reports me hai. Amount 2 decimal tak rehta hai (purana Access report poore rupaye me round karta tha).
+
+Database version 3: sirf naye columns aur `Milkman_rate` table judte hain.
+
+### Rounding (v2.2)
+Settings > Amount Rounding: **Keep Paise** (default) ya **Round To Rupees** (50 paise se upar agla rupaya).
+Har entry ka amount round hota hai; rate 2 decimal hi rehta hai. Pehle se save entries aur payments nahi badalte.
+
 ## 7. Accounting
 
 Balance = Opening + Purchase − Payment − Advance + Adjustment. Positive = dairy ko dena hai.
@@ -113,7 +132,22 @@ Import ek transaction hai: beech me error aaya to kuch bhi save nahi hota.
 - **Cloud sync nahi hai.** Purane README me Supabase sync likha tha, par code project me nahi tha
   (`supabase.sql`, `src/config.js` gayab). Devices ke beech data backup/restore se le jaayein (merge nahi, replace hota hai).
 - Milk unit (L / Kg) pehli entry ke baad lock ho jata hai; quantity convert nahi hoti.
-- Language: English ya हिन्दी (milk type names, CSV headers aur kuch system errors English me).
+- Language: English, हिन्दी aur 11 Indian languages (neeche section 10). Milk type names, CSV headers aur kuch lambe messages English me hi rehte hain.
+
+## 10. Theme, font aur language (v2.3)
+
+- **Background photo hata di gayi.** Ab har screen ka rang theme se aata hai (`assets/farm-bg.jpg` delete).
+- **Theme:** Settings > Appearance me 10 options: Light, Dark, Black (AMOLED), Green, Sand, Rose, Purple, Ocean,
+  Forest (dark green) aur Auto (phone ki dark/light setting). Chunte hi lagu hota hai aur save ho jata hai.
+  Naya theme jodna ho to `src/core/themes.js` me ek entry badhayein.
+- **Font:** Poppins-Bold hata diya; bold jagah ab Poppins-Medium (halka bold). Print/PDF me bhi 600 weight.
+- **Language:** Login screen aur Settings > Appearance me language picker. Har row me English naam + apni lipi dono
+  dikhte hain (jaise "Tamil · தமிழ்"). English, Hindi, Bengali, Marathi, Gujarati, Punjabi, Tamil, Telugu, Kannada,
+  Malayalam, Odia, Urdu, Assamese.
+  Hindi code me inline hai (`L('English', 'हिन्दी')`). Baaki bhasha `src/core/translations.js` se aati hai
+  (~165 mukhya labels/buttons/headings). Jo text table me nahi hai wo English me dikhta hai.
+  Naya label jodne ke liye `translations.js` ki row ka English text code ke `L('...')` se bilkul same rakhein.
+- Tests: `npm test` (i18n/theme tests me har theme ka text-contrast bhi check hota hai).
 
 ## Code layout
 

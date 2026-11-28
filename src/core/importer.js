@@ -1,7 +1,8 @@
 import { write } from './tx.js';
 import { parseDate } from './dates.js';
-import { round2, parseNum } from './money.js';
+import { round2, parseNum, roundAmount } from './money.js';
 import * as repo from './repo.js';
+import { factorOf, linkedRate, toMagha } from './units.js';
 
 export const MAX_ROWS = 20000;
 export const MAX_BYTES = 10 * 1024 * 1024;
@@ -19,6 +20,7 @@ export const IMPORT_TYPES = {
       f('joining_date', 'Joining Date', false, ['joiningdate', 'joindate', 'doj'], ['2026-01-15', ''], 'date'),
       f('custom_rate', 'Fixed Rate', false, ['fixedrate', 'customrate'], ['', ''], 'num'),
       f('notes', 'Notes', false, ['notes', 'remark'], ['', '']),
+      f('pay_unit', 'Payment Unit', false, ['paymentunit', 'unit', 'milkmantype'], ['Litre', 'Magha']),
     ],
   },
   rates: {
@@ -93,6 +95,9 @@ export async function validateImport(db, type, rows, mapping, options, onProgres
   const types = new Map((await repo.listMilkTypes(db)).map((t) => [t.name.toLowerCase(), t.name]));
   const rates = await repo.listRates(db); // newest first
   const existing = new Map();
+  const settings = await repo.getSettings(db);
+  const factor = factorOf(settings.maghaFactor);
+  const prices = await db.getAllAsync('SELECT * FROM Milkman_rate WHERE deleted_at IS NULL ORDER BY applicable_date DESC, id DESC');
   if (type === 'purchases') {
     for (const p of await repo.listPurchases(db, {})) existing.set(`${p.date}|${p.shift}|${p.milkman_code}|${p.milk_type}`, p);
   } else if (type === 'rates') {
@@ -129,6 +134,11 @@ export async function validateImport(db, type, rows, mapping, options, onProgres
       let key, data, before = null;
       if (type === 'milkmen') {
         d.milk_type = canon(d.milk_type);
+        if (d.pay_unit) {
+          const u = d.pay_unit.toLowerCase();
+          d.pay_unit = ['magha', 'मघा'].includes(u) ? 'Magha' : ['l', 'ltr', 'liter', 'litre', 'लीटर'].includes(u) ? 'L'
+            : issue(`Payment unit "${d.pay_unit}" must be Litre or Magha`, `यूनिट "${d.pay_unit}" लीटर या मघा हो`);
+        }
         data = repo.checkMilkman(d);
         key = String(data.milkman_code);
         before = milkmen.get(data.milkman_code) || null;
@@ -136,6 +146,7 @@ export async function validateImport(db, type, rows, mapping, options, onProgres
           // Update me jo column map nahi/khali hai, purani value rehne do.
           const merged = { ...before };
           for (const k of Object.keys(data)) if (d[k] !== '' && d[k] !== undefined) merged[k] = data[k];
+          if (d.custom_rate) merged.rate_mode = 'fixed';
           data = merged;
         }
       } else if (type === 'rates') {
@@ -155,22 +166,28 @@ export async function validateImport(db, type, rows, mapping, options, onProgres
         let rate = d.rate ? Number(d.rate) : 0;
         if (d.rate && !(rate > 0)) issue('Rate must be above 0', 'रेट 0 से ज़्यादा हो');
         if (!rate) {
-          if (milkman.custom_rate > 0) rate = round2(milkman.custom_rate);
-          else {
+          if (milkman.rate_mode === 'fixed' && milkman.custom_rate > 0) rate = round2(milkman.custom_rate);
+          else if (milkman.rate_mode === 'own') {
+            const own = prices.find((x) => x.milkman_code === milkman.milkman_code && x.applicable_date <= d.date);
+            if (!own) issue(`No price for milkman ${milkman.milkman_code} on ${d.date}. Add it or map a Rate column.`, `${d.date} का भाव नहीं मिला`);
+            rate = linkedRate(own, q.fat, q.snf);
+          } else {
             const row = rates.find((r) => r.milk_type === milkType && r.applicable_date <= d.date);
             if (!row) issue(`No ${milkType} rate for ${d.date}. Add a rate or map a Rate column.`, `${d.date} का ${milkType} रेट नहीं मिला`);
             rate = repo.calcRate(row, q.fat, q.snf);
             if (!(rate > 0)) issue('Calculated rate is 0', 'रेट 0 आ रहा है');
           }
         }
-        const calc = round2(q.qty * rate);
+        const payUnit = settings.unit === 'L' ? milkman.pay_unit || 'L' : 'L';
+        const magha = settings.unit === 'L' ? toMagha(q.qty, factor) : null;
+        const calc = roundAmount((payUnit === 'Magha' ? magha : q.qty) * rate, settings.rounding);
         let amount = calc;
         if (d.amount) {
           amount = round2(Number(d.amount));
           // 1 rupee tak ka farq rounding maana jata hai; file ka amount hi rakha jata hai.
           if (Math.abs(amount - calc) > 1) issue(`Amount ${amount} does not match Quantity × Rate (${calc})`, `राशि ${amount} मात्रा × रेट (${calc}) से मेल नहीं खाती`);
         }
-        data = { date: d.date, shift, milkman_code: milkman.milkman_code, milk_type: milkType, ...q, rate: round2(rate), amount, remark: d.remark };
+        data = { date: d.date, shift, milkman_code: milkman.milkman_code, milk_type: milkType, ...q, pay_unit: payUnit, magha_qty: magha, rate: round2(rate), amount, remark: d.remark };
         key = `${data.date}|${shift}|${data.milkman_code}|${milkType}`;
         before = existing.get(key) || null;
       }
